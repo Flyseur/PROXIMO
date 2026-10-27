@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import Logo from "../components/Logo";
 import { ErrorBox } from "../components/ui";
-import { api, ApiError, COMMUNES, type AuthChallenge } from "../lib/api";
+import { api, ApiError, COMMUNES, userToken, type PublicUser } from "../lib/api";
 import CommuneSelect from "../components/CommuneSelect";
 import { I, Rich } from "../components/Icon";
 
@@ -15,7 +15,6 @@ const metiers = [
 
 type Mode = "login" | "signup";
 type SignupRole = "artisan" | "client";
-type LoginMethod = "phone" | "email";
 
 const base = "w-full border-2 rounded-xl px-4 py-3.5 text-base focus:outline-none transition-colors";
 const cls = (err?: string) => `${base} ${err ? "border-red-400 bg-red-50/40" : "border-[#D1D9DC] focus:border-[#1D4E5B] bg-white"}`;
@@ -26,7 +25,6 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "signup" ? "signup" : "login");
   const [signupRole, setSignupRole] = useState<SignupRole>("artisan");
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>("phone");
   const [step, setStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState("");
@@ -43,11 +41,6 @@ export default function Login() {
     setErrors((e) => ({ ...e, [k]: "" }));
     setFormError("");
   };
-
-  function goTwoFA(ch: AuthChallenge, purpose: "login" | "signup") {
-    sessionStorage.setItem("prx_challenge", JSON.stringify({ ...ch, purpose }));
-    navigate("/2fa");
-  }
 
   function validateClientSignup() {
     const errs: Record<string, string> = {};
@@ -100,8 +93,12 @@ export default function Login() {
         } : {}),
       };
 
-      const ch = await api.post<AuthChallenge>("/auth/signup", payload);
-      goTwoFA(ch, "signup");
+      const res = await api.post<{ token: string; user: PublicUser }>("/auth/signup", payload);
+      if (res.token) {
+        userToken.set(res.token);
+        sessionStorage.removeItem("prx_challenge");
+        navigate("/tableau-de-bord");
+      }
     } catch (e) {
       if (e instanceof ApiError) {
         const field = e.data.field as string | undefined;
@@ -122,15 +119,19 @@ export default function Login() {
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     const errs: Record<string, string> = {};
-    if (!form.identifier.trim()) errs.identifier = loginMethod === "phone" ? "Numéro requis" : "Email requis";
+    if (!form.identifier.trim()) errs.identifier = "Numéro de téléphone requis";
     if (!form.password.trim()) errs.password = "Mot de passe requis";
     setErrors(errs);
     if (Object.keys(errs).length) return;
     setBusy(true);
     setFormError("");
     try {
-      const ch = await api.post<AuthChallenge>("/auth/login", { identifier: form.identifier, password: form.password });
-      goTwoFA(ch, "login");
+      const res = await api.post<{ token: string; user: PublicUser }>("/auth/login", { identifier: form.identifier, password: form.password });
+      if (res.token) {
+        userToken.set(res.token);
+        sessionStorage.removeItem("prx_challenge");
+        navigate("/tableau-de-bord");
+      }
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Identifiant ou mot de passe incorrect.");
     } finally {
@@ -166,7 +167,7 @@ export default function Login() {
               "✓ Acomptes protégés sous séquestre Mobile Money",
               "✓ Vérification d'identité et avis certifiés",
               "✓ Échanges directs par WhatsApp",
-              "✓ Double authentification (2FA) par SMS",
+              "✓ Connexion simple et sécurisée par mot de passe",
             ].map((f) => (
               <li key={f}><Rich text={f} /></li>
             ))}
@@ -216,36 +217,18 @@ export default function Login() {
           {mode === "login" && (
             <div className="bg-white rounded-3xl p-8 shadow-sm border-2 border-[#E8F2F5]">
               <h1 className="text-3xl text-[#1D4E5B] mb-1 font-bold">Bon retour !</h1>
-              <p className="text-[#6B7280] text-sm mb-6">Connectez-vous à votre espace client ou artisan.</p>
-              
-              <div className="flex gap-2 mb-5">
-                {(["phone", "email"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setLoginMethod(m)}
-                    aria-pressed={loginMethod === m}
-                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${
-                      loginMethod === m
-                        ? "border-[#1D4E5B] bg-[#E8F2F5] text-[#1D4E5B]"
-                        : "border-[#D1D9DC] text-[#6B7280] hover:border-[#1D4E5B]"
-                    }`}
-                  >
-                    {m === "phone" ? <Rich text={"📱 Téléphone"} /> : <Rich text={"✉️ Email"} />}
-                  </button>
-                ))}
-              </div>
+              <p className="text-[#6B7280] text-sm mb-6">Connectez-vous avec votre numéro de téléphone et mot de passe.</p>
 
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
                 <div>
                   <label htmlFor="identifier" className="block text-xs font-bold text-[#1D4E5B] mb-1.5">
-                    {loginMethod === "phone" ? <Rich text={"📱 Numéro de téléphone"} /> : <Rich text={"✉️ Adresse email"} />}
+                    <Rich text={"📱 Numéro de téléphone"} />
                   </label>
                   <input
                     id="identifier"
-                    type={loginMethod === "phone" ? "tel" : "email"}
+                    type="tel"
                     autoComplete="username"
-                    placeholder={loginMethod === "phone" ? "+225 07 XX XX XX XX" : "vous@exemple.ci"}
+                    placeholder="07 01 02 03 04 ou +225..."
                     value={form.identifier}
                     onChange={(e) => set("identifier", e.target.value)}
                     className={cls(errors.identifier)}

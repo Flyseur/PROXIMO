@@ -8,7 +8,7 @@ import { api, ApiError } from "../lib/api";
 import { I, Rich } from "../components/Icon";
 const faqs = [
   { category: "Compte & inscription", icon: "👤", items: [
-    { q: "Comment créer un compte sur Proximo CI ?", a: "Cliquez sur 'Connexion' puis 'Inscription'. Vous pouvez vous inscrire avec votre numéro WhatsApp (pas besoin d'email). Votre compte est vérifié par code SMS/WhatsApp puis validé par notre équipe." },
+    { q: "Comment créer un compte sur Proximo CI ?", a: "Cliquez sur 'Connexion' puis 'Inscription'. Renseignez simplement votre prénom, nom, téléphone et mot de passe. Votre compte est activé immédiatement, sans attente de SMS !" },
     { q: "Est-ce que Proximo CI est disponible dans ma ville ?", a: "Proximo CI est présent à Abidjan (toutes communes) et dans les villes de Bouaké, San-Pédro, Yamoussoukro, Daloa et Korhogo." } ] },
   { category: "Pour les clients", icon: "🏠", items: [
     { q: "Comment trouver un artisan dans ma commune ?", a: "Utilisez la recherche, sélectionnez votre commune (Cocody, Yopougon, Plateau, etc.) et filtrez par catégorie. Vous verrez les artisans disponibles avec leurs tarifs en FCFA." },
