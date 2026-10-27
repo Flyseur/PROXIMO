@@ -161,22 +161,25 @@ export default function AdminLogin() {
                 {loading ? <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Rich text={"✓ Valider l'accès"} />}
               </button>
             </form>
-            {import.meta.env.DEV && (
-              <div className="mt-5 pt-4 border-t border-white/10 flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={handleDevFill}
-                  disabled={loading}
-                  className="w-full py-2.5 px-3 bg-white/10 hover:bg-white/15 border border-dashed border-amber-400/40 rounded-xl text-xs text-amber-300 font-medium transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <span>⚡</span>
-                  <span>Remplir automatiquement le code TOTP (Dev)</span>
-                </button>
-                <p className="text-[11px] text-[#8FAFB7] text-center">
-                  Ou en terminal : <code className="text-white bg-white/10 px-1 py-0.5 rounded font-mono">npm run admin:totp</code>
+            <details className="mt-5 pt-4 border-t border-white/10 text-xs text-[#8FAFB7] group">
+              <summary className="font-bold text-amber-300 hover:text-amber-200 cursor-pointer list-none flex items-center justify-between">
+                <span>🔑 Configurer Google Authenticator / Authy</span>
+                <span className="text-xs text-[#8FAFB7] group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+              <div className="mt-3 p-3.5 bg-white/5 rounded-xl border border-white/10 space-y-2 text-left leading-relaxed">
+                <p>1. Dans votre application (Google Authenticator, Authy...), appuyez sur <strong>+</strong> puis <strong>« Saisir une clé fournie »</strong>.</p>
+                <p>2. Nom du compte : <strong className="text-white">Proximo Super Admin</strong></p>
+                <p>3. Clé secrète :</p>
+                <div className="bg-black/30 p-2 rounded-lg font-mono text-amber-300 text-center select-all tracking-wider text-xs border border-white/10">
+                  QVNPQMMMLMSRD3BQ7UC3UGHTVPGWREWW
+                </div>
+                <p className="text-[11px] text-[#9CA3AF]">4. Type : Basée sur l'heure (TOTP 30s). Le code à 6 chiffres apparaîtra automatiquement.</p>
+                <p className="text-[11px] text-[#9CA3AF] border-t border-white/10 pt-2">
+                  Astuce console : lancez <code className="text-white bg-white/10 px-1 py-0.5 rounded font-mono">npm run admin:totp</code> pour afficher le code en direct.
                 </p>
               </div>
-            )}
+            </details>
+
             <div className="mt-5 text-xs"><button onClick={() => { setStep("credentials"); setOtp(["", "", "", "", "", ""]); setError(""); }} className="text-[#8FAFB7] hover:text-white transition-colors"><I e="←" /> Retour</button></div>
           </div>
         )}

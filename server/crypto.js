@@ -21,11 +21,19 @@ export function verifyPassword(pw, stored) {
 // ── Secret de signature ───────────────────────────────────────────────────────
 export function loadSecret(dataDir) {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  const file = path.join(dataDir, ".secret");
-  if (fs.existsSync(file)) return fs.readFileSync(file, "utf8").trim();
-  const secret = crypto.randomBytes(48).toString("hex");
-  fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(file, secret, { mode: 0o600 });
+  if (process.env.DATABASE_URL) {
+    // Sur Vercel serverless, dérive un secret stable et identique sur toutes les instances Lambdas
+    return crypto.createHmac("sha256", "proximo-ci-stable-jwt-v1").update(process.env.DATABASE_URL).digest("hex");
+  }
+  const file = dataDir ? path.join(dataDir, ".secret") : "";
+  if (file && fs.existsSync(file)) return fs.readFileSync(file, "utf8").trim();
+  const secret = process.env.SESSION_SECRET || "proximo-ci-default-jwt-secret-key-2026-abidjan-secure";
+  if (file) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(file, secret, { mode: 0o600 });
+    } catch {}
+  }
   return secret;
 }
 

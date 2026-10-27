@@ -72,7 +72,13 @@ export default function Search() {
           {items.map((a) => (
             <article key={a.id} className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-5 hover:border-[#1D4E5B] hover:shadow-lg transition-all flex flex-col gap-4">
               <div className="flex items-start gap-4">
-                <img src={a.img} alt={`Photo de ${a.name}`} className="w-16 h-16 rounded-xl object-cover bg-[#E8F2F5] flex-shrink-0" />
+                {a.img ? (
+                  <img src={a.img} alt={`Photo de ${a.name}`} className="w-16 h-16 rounded-xl object-cover bg-[#E8F2F5] flex-shrink-0" />
+                ) : (
+                  <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-[#1D4E5B] to-[#2B6D7F] text-white flex items-center justify-center text-xl font-bold flex-shrink-0 shadow-xs">
+                    {a.name.split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase() || "PRO"}
+                  </div>
+                )}
                 <div className="flex-1">
                   <div className="flex justify-between items-start gap-2">
                     <div>

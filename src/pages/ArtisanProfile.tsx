@@ -4,7 +4,7 @@ import WhatsAppButton from "../components/WhatsAppButton";
 import VoiceAssistant from "../components/VoiceAssistant";
 import { Spinner, ErrorBox } from "../components/ui";
 import { useFetch } from "../lib/useFetch";
-import { fmtDate, api, ApiError, type ArtisanDetail } from "../lib/api";
+import { fmtDate, api, ApiError, userToken, type ArtisanDetail, type PublicUser } from "../lib/api";
 
 import { I, Rich } from "../components/Icon";
 export default function ArtisanProfile() {
@@ -21,6 +21,7 @@ export default function ArtisanProfile() {
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewAuthor, setReviewAuthor] = useState("");
   const [reviewRating, setReviewRating] = useState(5);
+  const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewSuccess, setReviewSuccess] = useState(false);
@@ -34,11 +35,33 @@ export default function ArtisanProfile() {
     }
   }, [a]);
 
+  // Pré-remplir automatiquement le nom si le client est connecté
+  useEffect(() => {
+    if (userToken.get()) {
+      api.get<{ user: PublicUser }>("/me", "user")
+        .then((res) => {
+          if (res?.user && !reviewAuthor) {
+            setReviewAuthor(`${res.user.firstName} ${res.user.lastName}`.trim());
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  function openReviewForm() {
+    setActiveTab("avis");
+    setShowReviewForm(true);
+    setReviewError("");
+    setTimeout(() => {
+      document.getElementById("review-form-section")?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  }
+
   async function handleSubmitReview(e: React.FormEvent) {
     e.preventDefault();
     if (!a) return;
     if (!reviewAuthor.trim()) return setReviewError("Veuillez renseigner votre nom ou prénom.");
-    if (!reviewText.trim() || reviewText.trim().length < 5) return setReviewError("Votre avis doit contenir au moins 5 caractères.");
+    if (!reviewText.trim() || reviewText.trim().length < 2) return setReviewError("Votre avis doit contenir au moins 2 caractères.");
     setSubmittingReview(true);
     setReviewError("");
     try {
@@ -50,14 +73,13 @@ export default function ArtisanProfile() {
       setCurrentRating(res.artisan.rating);
       setCurrentReviewsCount(res.artisan.reviews);
       setReviewSuccess(true);
-      setReviewAuthor("");
       setReviewText("");
       setTimeout(() => {
         setShowReviewForm(false);
         setReviewSuccess(false);
-      }, 3000);
+      }, 3500);
     } catch (err) {
-      setReviewError(err instanceof ApiError ? err.message : "Impossible d'enregistrer votre avis.");
+      setReviewError(err instanceof ApiError ? err.message : "Impossible d'enregistrer votre avis. Veuillez réessayer.");
     } finally {
       setSubmittingReview(false);
     }
@@ -87,7 +109,13 @@ export default function ArtisanProfile() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         <div className="lg:col-span-2">
           <div className="flex items-start gap-6 mb-8 p-6 bg-[#F4F8F9] rounded-2xl border-2 border-[#E8F2F5]">
-            <img src={a.img} alt={`Photo de profil de ${a.name}`} className="w-24 h-24 rounded-2xl object-cover bg-[#E8F2F5] flex-shrink-0" />
+            {a.img ? (
+              <img src={a.img} alt={`Photo de profil de ${a.name}`} className="w-24 h-24 rounded-2xl object-cover bg-[#E8F2F5] flex-shrink-0 shadow-sm" />
+            ) : (
+              <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#1D4E5B] to-[#2B6D7F] text-white flex items-center justify-center text-3xl font-black flex-shrink-0 shadow-sm">
+                {a.name.split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase() || "PRO"}
+              </div>
+            )}
             <div className="flex-1">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -98,11 +126,20 @@ export default function ArtisanProfile() {
                 <span className={`text-sm px-3 py-1.5 rounded-full font-bold flex-shrink-0 ${a.available ? "bg-green-100 text-green-700" : "bg-red-50 text-red-600"}`}>{a.available ? <Rich text={"✓ Disponible"} /> : <Rich text={"✗ Occupé"} />}</span>
               </div>
               <div className="flex items-center gap-4 mt-4 flex-wrap">
-                <div className="flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 5].map((s) => <span key={s} className={s <= fullStars ? "text-[#F26522]" : "text-[#D1D9DC]"} aria-hidden="true"><I e="★" /></span>)}
+                <button
+                  type="button"
+                  onClick={openReviewForm}
+                  className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer group text-left"
+                  title="Voir les avis ou laisser un avis"
+                >
+                  <div className="flex items-center gap-1 text-base" aria-label={`Note moyenne : ${currentRating} sur 5`}>
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <I key={s} e="★" className={s <= fullStars ? "text-amber-400 drop-shadow-xs" : "text-gray-300"} />
+                    ))}
+                  </div>
                   <span className="text-sm font-bold text-[#1D4E5B] ml-1">{currentRating}</span>
-                  <span className="text-sm text-[#9CA3AF]">({currentReviewsCount} avis)</span>
-                </div>
+                  <span className="text-sm text-[#F26522] group-hover:underline font-semibold ml-1">({currentReviewsCount} avis · Noter <I e="✍️" />)</span>
+                </button>
                 {a.years != null && (<><span className="text-[#D1D9DC]">|</span><span className="text-sm text-[#6B7280]"><I e="⏱" /> {a.years} ans d'expérience</span></>)}
                 {a.verified && (<><span className="text-[#D1D9DC]">|</span><span className="text-sm text-[#6B7280]"><I e="🏅" /> Certifié</span></>)}
               </div>
@@ -133,11 +170,9 @@ export default function ArtisanProfile() {
                   <div className="flex items-center gap-4">
                     <div className="text-4xl font-extrabold text-[#1D4E5B]">{currentRating}</div>
                     <div>
-                      <div className="flex text-[#F26522] text-lg">
+                      <div className="flex items-center gap-1 text-xl">
                         {[1, 2, 3, 4, 5].map((s) => (
-                          <span key={s} className={s <= Math.round(currentRating) ? "text-[#F26522]" : "text-[#D1D9DC]"}>
-                            <I e="★" />
-                          </span>
+                          <I key={s} e="★" className={s <= Math.round(currentRating) ? "text-amber-400 drop-shadow-xs" : "text-gray-300"} />
                         ))}
                       </div>
                       <p className="text-xs text-[#6B7280] font-semibold mt-0.5">{currentReviewsCount} avis certifiés Proximo CI</p>
@@ -154,7 +189,7 @@ export default function ArtisanProfile() {
 
                 {/* Review Form */}
                 {showReviewForm && (
-                  <form onSubmit={handleSubmitReview} className="bg-white rounded-2xl p-6 border-2 border-[#F26522]/30 shadow-md flex flex-col gap-4 animate-in fade-in duration-200">
+                  <form id="review-form-section" onSubmit={handleSubmitReview} className="bg-white rounded-2xl p-6 border-2 border-[#F26522]/30 shadow-md flex flex-col gap-4 animate-in fade-in duration-200 scroll-mt-28">
                     <h3 className="font-bold text-[#1D4E5B] text-lg flex items-center gap-2">
                       <I e="⭐" /> Votre retour d'expérience avec {a.name}
                     </h3>
@@ -168,23 +203,31 @@ export default function ArtisanProfile() {
                     {reviewError && <ErrorBox message={reviewError} />}
 
                     <div>
-                      <label className="block text-xs font-bold text-[#1D4E5B] mb-1.5">Note globale *</label>
-                      <div className="flex items-center gap-2">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button
-                            type="button"
-                            key={star}
-                            onClick={() => setReviewRating(star)}
-                            className="text-2xl transition-transform hover:scale-125 cursor-pointer focus:outline-none"
-                            title={`${star} étoile${star > 1 ? "s" : ""}`}
-                          >
-                            <span className={star <= reviewRating ? "text-[#F26522]" : "text-[#D1D9DC]"}>
-                              <I e="★" />
-                            </span>
-                          </button>
-                        ))}
+                      <label className="block text-xs font-bold text-[#1D4E5B] mb-1.5">Note globale * (cliquez sur les étoiles pour noter)</label>
+                      <div className="flex items-center gap-1.5">
+                        {[1, 2, 3, 4, 5].map((star) => {
+                          const activeRating = hoverRating ?? reviewRating;
+                          const isFilled = star <= activeRating;
+                          return (
+                            <button
+                              type="button"
+                              key={star}
+                              onClick={() => { setReviewRating(star); setHoverRating(null); }}
+                              onMouseEnter={() => setHoverRating(star)}
+                              onMouseLeave={() => setHoverRating(null)}
+                              className="text-3xl transition-transform hover:scale-125 cursor-pointer focus:outline-none p-1"
+                              title={`${star} étoile${star > 1 ? "s" : ""}`}
+                              aria-label={`Donner une note de ${star} sur 5`}
+                            >
+                              <I
+                                e="★"
+                                className={isFilled ? "text-amber-400 drop-shadow-sm scale-105" : "text-gray-300 opacity-60 hover:opacity-100"}
+                              />
+                            </button>
+                          );
+                        })}
                         <span className="text-sm font-bold text-[#1D4E5B] ml-2">
-                          {reviewRating === 5 ? "Excellent (5/5)" : reviewRating === 4 ? "Très bien (4/5)" : reviewRating === 3 ? "Correct (3/5)" : reviewRating === 2 ? "Décevant (2/5)" : "Médiocre (1/5)"}
+                          {(hoverRating ?? reviewRating) === 5 ? "Excellent (5/5)" : (hoverRating ?? reviewRating) === 4 ? "Très bien (4/5)" : (hoverRating ?? reviewRating) === 3 ? "Correct (3/5)" : (hoverRating ?? reviewRating) === 2 ? "Décevant (2/5)" : "Médiocre (1/5)"}
                         </span>
                       </div>
                     </div>
@@ -244,11 +287,9 @@ export default function ArtisanProfile() {
                             <p className="font-bold text-[#1D4E5B]">{r.name}</p>
                             <p className="text-xs text-[#9CA3AF]">{fmtDate(r.date)}</p>
                           </div>
-                          <div className="flex text-sm" aria-label={`Note : ${r.rating} étoiles sur 5`}>
+                          <div className="flex items-center gap-0.5 text-sm" aria-label={`Note : ${r.rating} étoiles sur 5`}>
                             {Array.from({ length: 5 }).map((_, k) => (
-                              <span key={k} className={k < r.rating ? "text-[#F26522]" : "text-[#D1D9DC]"}>
-                                <I e="★" />
-                              </span>
+                              <I key={k} e="★" className={k < r.rating ? "text-amber-400 drop-shadow-xs" : "text-gray-300"} />
                             ))}
                           </div>
                         </div>
@@ -295,6 +336,13 @@ export default function ArtisanProfile() {
               <Link to={`/poster-offre?artisan=${a.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-[#F26522] text-white rounded-xl font-bold text-base hover:bg-[#C84E10] transition-colors shadow-md"><I e="📋" /> Demander un devis</Link>
               <WhatsAppButton phone={a.phone} message={`Bonjour ${a.name}, je vous contacte via Proximo CI pour un devis !`} label="Contacter par WhatsApp" size="md" className="w-full justify-center" />
               <a href={`tel:+${a.phone}`} className="flex items-center justify-center gap-2 w-full py-4 border-2 border-[#1D4E5B] text-[#1D4E5B] rounded-xl font-bold text-base hover:bg-[#E8F2F5] transition-colors"><I e="📞" /> Appeler directement</a>
+              <button
+                type="button"
+                onClick={openReviewForm}
+                className="flex items-center justify-center gap-2 w-full py-3.5 bg-[#FFF2EB] text-[#F26522] border-2 border-[#F26522]/30 rounded-xl font-bold text-sm hover:bg-[#FDE8D9] transition-colors cursor-pointer shadow-xs"
+              >
+                <I e="✍️" /> Laisser un avis sur cet artisan
+              </button>
             </div>
             <hr className="my-5 border-[#E8F2F5]" />
             <dl className="flex flex-col gap-3 text-sm">

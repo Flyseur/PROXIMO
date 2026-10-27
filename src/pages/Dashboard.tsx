@@ -87,7 +87,16 @@ export default function Dashboard() {
   // ── Garde d'accès : la session est vérifiée côté serveur ────────────────────
   useEffect(() => {
     if (!adminToken.get()) { navigate("/backoffice-login", { replace: true }); return; }
-    api.get<AdminSession>("/admin/me", "admin").then(setSession).catch(expired);
+    api.get<AdminSession>("/admin/me", "admin")
+      .then(setSession)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          expired();
+        } else {
+          console.error("Erreur session admin:", err);
+          setActionError("Connexion en cours ou latence réseau. Si le problème persiste, veuillez rafraîchir.");
+        }
+      });
   }, [navigate, expired]);
 
   // ── Inactivité : 15 min, avertissement à 14 min ─────────────────────────────

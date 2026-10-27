@@ -69,9 +69,13 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     rate.set(key, arr);
   }
 
-  const clientIp = (req) =>
-    (process.env.TRUST_PROXY === "1" && String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim()) ||
-    req.socket.remoteAddress || "?";
+  const clientIp = (req) => {
+    const xff = req?.headers?.["x-forwarded-for"];
+    if (xff) return String(xff).split(",")[0].trim();
+    const xRealIp = req?.headers?.["x-real-ip"];
+    if (xRealIp) return String(xRealIp).trim();
+    return req?.socket?.remoteAddress || "?";
+  };
 
   // ── Mappers ─────────────────────────────────────────────────────────────────
   function artisanRow(r) {
@@ -100,9 +104,10 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     const h = req.headers.authorization ?? "";
     const p = h.startsWith("Bearer ") ? verifyToken(h.slice(7), secret) : null;
     if (!p || p.typ !== "admin") throw new HttpError(401, "Session administrateur requise.");
-    const s = await db.prepare("SELECT * FROM admin_sessions WHERE id = ? AND revoked = 0").get(p.sid);
+    const s = await db.prepare("SELECT * FROM admin_sessions WHERE id = ? AND (revoked = 0 OR revoked IS NULL)").get(p.sid);
     const now = Math.floor(Date.now() / 1000);
-    if (!s || now - s.last_activity > ADMIN_IDLE_SEC) {
+    const lastAct = s ? Number(s.last_activity || s.issued_at || now) : 0;
+    if (!s || (now - lastAct > ADMIN_IDLE_SEC)) {
       if (s) await db.prepare("UPDATE admin_sessions SET revoked = 1 WHERE id = ?").run(s.id);
       throw new HttpError(401, "Session expirée.");
     }
@@ -289,17 +294,17 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
   route("POST", "/api/artisans/:id/reviews", async ({ params, body, req }) => {
     const artisanId = Number(params.id);
     if (!artisanId || isNaN(artisanId)) throw bad("ID artisan invalide.");
-    limit(`rev:${clientIp(req)}:${artisanId}`, 3, 3600_000);
+    limit(`rev:${clientIp(req)}:${artisanId}`, 15, 3600_000);
 
-    const art = await db.prepare("SELECT u.id, a.rating, a.reviews_count FROM users u JOIN artisans a ON a.user_id = u.id WHERE u.id = ? AND u.status = 'Actif'").get(artisanId);
-    if (!art) throw new HttpError(404, "Artisan introuvable ou non disponible.");
+    const art = await db.prepare("SELECT u.id, a.rating, a.reviews_count FROM users u JOIN artisans a ON a.user_id = u.id WHERE u.id = ? AND u.status != 'Suspendu'").get(artisanId);
+    if (!art) throw new HttpError(404, "Artisan introuvable ou compte indisponible.");
 
     const author = str(body.author, 80);
     const text = str(body.text, 1000);
     const rating = Math.min(5, Math.max(1, parseInt(body.rating, 10) || 5));
 
     if (!author) throw bad("Le nom ou prénom est requis.");
-    if (!text || text.length < 5) throw bad("Votre avis doit contenir au moins 5 caractères.");
+    if (!text || text.length < 2) throw bad("Votre avis doit contenir au moins 2 caractères.");
 
     const nowIso = new Date().toISOString().replace("T", " ").slice(0, 19);
     await db.prepare("INSERT INTO reviews (artisan_id, author, rating, text, created_at) VALUES (?,?,?,?,?)")
@@ -576,7 +581,11 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
 
   route("GET", "/api/me", async ({ req }) => {
     const u = await requireUser(req);
-    const artisan = u.role === "artisan" ? await db.prepare("SELECT trade, price, available, rating, reviews_count, missions, years_experience, bio FROM artisans WHERE user_id = ?").get(u.id) : null;
+    const artisan = u.role === "artisan" ? await db.prepare("SELECT trade, price, available, rating, reviews_count, missions, years_experience, bio, img, specialties, zones, diplome, ecole, certification FROM artisans WHERE user_id = ?").get(u.id) : null;
+    if (artisan) {
+      artisan.specialties = json(artisan.specialties);
+      artisan.zones = json(artisan.zones);
+    }
     const requests = await db.prepare(`SELECT id, title, category, commune, status, amount, created_at AS date FROM requests
       WHERE phone = ? ${u.role === "artisan" ? "OR artisan_id = ?" : ""} ORDER BY created_at DESC LIMIT 50`).all(...(u.role === "artisan" ? [u.phone, u.id] : [u.phone]));
     
@@ -613,6 +622,78 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     if (u.role !== "artisan") throw new HttpError(403, "Réservé aux artisans.");
     await db.prepare("UPDATE artisans SET available = ? WHERE user_id = ?").run(body.available ? 1 : 0, u.id);
     return { available: !!body.available };
+  });
+
+  route("PATCH", "/api/me/profile", async ({ req, body }) => {
+    const u = await requireUser(req);
+    const firstName = str(body.firstName, 60);
+    const lastName = str(body.lastName, 60);
+    const commune = str(body.commune, 60);
+    const email = body.email ? str(body.email, 120) : null;
+
+    if (!firstName || !lastName) throw bad("Prénom et nom requis.");
+    if (!commune) throw bad("La commune est requise.");
+    if (email && !validEmail(email)) throw bad("Adresse email invalide.");
+    if (email) {
+      const exist = await db.prepare("SELECT 1 FROM users WHERE email = ? AND id != ?").get(email, u.id);
+      if (exist) throw new HttpError(409, "Cet email est déjà associé à un autre compte.");
+    }
+
+    await db.prepare("UPDATE users SET first_name = ?, last_name = ?, commune = ?, email = ? WHERE id = ?")
+      .run(firstName, lastName, commune, email, u.id);
+
+    if (u.role === "artisan") {
+      const trade = str(body.trade, 80);
+      const price = str(body.price, 60);
+      const bio = str(body.bio, 1000);
+      const diplome = str(body.diplome, 120);
+      const certification = str(body.certification, 120);
+      const years = body.years_experience != null && !isNaN(Number(body.years_experience)) ? Number(body.years_experience) : null;
+      const img = body.img !== undefined ? (typeof body.img === "string" ? body.img.trim() : null) : undefined;
+
+      if (img && img.startsWith("data:image/") && img.length > 3_000_000) {
+        throw bad("L'image est trop volumineuse (max 2 Mo).");
+      }
+
+      const updates = [];
+      const params = [];
+      if (trade) {
+        updates.push("trade = ?");
+        params.push(trade);
+        const metierKey = norm(trade).split(/[\s&/]+/)[0];
+        const slug = METIER_TO_SLUG[metierKey] || METIER_TO_SLUG[norm(trade)];
+        if (slug) {
+          try {
+            await db.prepare("DELETE FROM artisan_services WHERE artisan_id = ?").run(u.id);
+            await db.prepare("INSERT INTO artisan_services (artisan_id, service_slug) VALUES (?,?)").run(u.id, slug);
+          } catch {}
+        }
+      }
+      if (price !== undefined) {
+        const num = (price.match(/^[\d\s]+/)?.[0] ?? "").replace(/\s+/g, "");
+        const priceVal = num ? parseInt(num, 10) : null;
+        updates.push("price = ?", "price_value = ?");
+        params.push(price || "Sur devis", priceVal);
+      }
+      if (bio !== undefined) { updates.push("bio = ?"); params.push(bio || null); }
+      if (diplome !== undefined) { updates.push("diplome = ?"); params.push(diplome || null); }
+      if (certification !== undefined) { updates.push("certification = ?"); params.push(certification || null); }
+      if (years !== undefined) { updates.push("years_experience = ?"); params.push(years); }
+      if (img !== undefined) { updates.push("img = ?"); params.push(img || null); }
+
+      if (updates.length > 0) {
+        params.push(u.id);
+        await db.prepare(`UPDATE artisans SET ${updates.join(", ")} WHERE user_id = ?`).run(...params);
+      }
+    }
+
+    const updatedUser = await db.prepare("SELECT * FROM users WHERE id = ?").get(u.id);
+    const updatedArtisan = u.role === "artisan" ? await db.prepare("SELECT trade, price, available, rating, reviews_count, missions, years_experience, bio, img, specialties, zones, diplome, ecole, certification FROM artisans WHERE user_id = ?").get(u.id) : null;
+    if (updatedArtisan) {
+      updatedArtisan.specialties = json(updatedArtisan.specialties);
+      updatedArtisan.zones = json(updatedArtisan.zones);
+    }
+    return { user: publicUser(updatedUser), artisan: updatedArtisan };
   });
 
   // ---- Admin ------------------------------------------------------------------

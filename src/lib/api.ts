@@ -8,9 +8,25 @@ export const userToken = {
   clear: () => localStorage.removeItem(USER_KEY),
 };
 export const adminToken = {
-  get: () => sessionStorage.getItem(ADMIN_KEY),
-  set: (t: string) => sessionStorage.setItem(ADMIN_KEY, t),
-  clear: () => sessionStorage.removeItem(ADMIN_KEY),
+  get: () => {
+    try {
+      return sessionStorage.getItem(ADMIN_KEY) || localStorage.getItem(ADMIN_KEY);
+    } catch {
+      return null;
+    }
+  },
+  set: (t: string) => {
+    try {
+      sessionStorage.setItem(ADMIN_KEY, t);
+      localStorage.setItem(ADMIN_KEY, t);
+    } catch {}
+  },
+  clear: () => {
+    try {
+      sessionStorage.removeItem(ADMIN_KEY);
+      localStorage.removeItem(ADMIN_KEY);
+    } catch {}
+  },
 };
 
 export class ApiError extends Error {
@@ -70,8 +86,14 @@ export interface PublicUser {
   commune: string | null; status: "Actif" | "En attente" | "Suspendu"; verified: boolean;
 }
 
-// ── Utilitaires d'affichage ───────────────────────────────────────────────────
 export const COMMUNES = ["Cocody", "Yopougon", "Plateau", "Abobo", "Marcory", "Koumassi", "Treichville", "Adjamé", "Attécoubé", "Port-Bouët"];
+
+export const METIERS = [
+  "Menuisier", "Électricien", "Plombier", "Peintre", "Maçon", "Jardinier",
+  "Toiturier", "Climatiseur", "Coiffeur/Coiffeuse", "Mécanicien", "Carrossier",
+  "Nounou / Garde d'enfants", "Chauffeur", "Agent de nettoyage",
+  "Serveur/Serveuse", "Cuisinier/Cuisinière", "Photographe", "Autre"
+];
 
 export function formatPhone(p: string) {
   return p.replace(/^(\d{3})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/, "+$1 $2 $3 $4 $5 $6");

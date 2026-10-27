@@ -122,6 +122,22 @@ test("inscription artisan + OTP + connexion + espace perso", async () => {
   assert.equal((await call("GET", "/api/me")).status, 401);
   // le code OTP n'est utilisable qu'une fois
   assert.equal((await call("POST", "/api/auth/verify", { challengeId: l.data.challengeId, code: l.data.devCode })).status, 400);
+
+  // Modification du profil et de la photo de profil
+  const upProfile = await call("PATCH", "/api/me/profile", {
+    firstName: "Yvan Modif",
+    lastName: "Kouadio",
+    commune: "Marcory",
+    trade: "Menuisier",
+    price: "20 000 FCFA/jour",
+    bio: "Menuisier qualifié avec 10 ans d'expérience.",
+    img: "https://example.com/avatar.jpg",
+  }, v2.data.token);
+  assert.equal(upProfile.status, 200);
+  assert.equal(upProfile.data.user.firstName, "Yvan Modif");
+  assert.equal(upProfile.data.user.commune, "Marcory");
+  assert.equal(upProfile.data.artisan.price, "20 000 FCFA/jour");
+  assert.equal(upProfile.data.artisan.img, "https://example.com/avatar.jpg");
 });
 
 test("admin : mot de passe + TOTP, RBAC, audit, verrouillage", async () => {
