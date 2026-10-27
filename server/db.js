@@ -423,7 +423,7 @@ function createPgAdapter(target) {
 }
 
 export async function openDb(file) {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
   if (databaseUrl && file !== ":memory:") {
     const pool = new pg.Pool({
       connectionString: databaseUrl,
