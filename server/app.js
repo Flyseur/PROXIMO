@@ -750,15 +750,13 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     return { token: signToken({ typ: "admin", sid }, secret, 12 * 3600), session: adminSessionInfo(admin, { ip, issued_at: now }) };
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    route("POST", "/api/admin/dev-totp", async ({ body }) => {
-      const p = verifyToken(body.challenge, secret);
-      if (!p || p.typ !== "admin-2fa") throw new HttpError(401, "Étape expirée. Recommencez la connexion.");
-      const admin = await db.prepare("SELECT * FROM admins WHERE id = ?").get(p.sub);
-      if (!admin) throw new HttpError(404, "Administrateur non trouvé.");
-      return { code: totp(admin.totp_secret) };
-    });
-  }
+  route("POST", "/api/admin/dev-totp", async ({ body }) => {
+    const p = verifyToken(body.challenge, secret);
+    if (!p || p.typ !== "admin-2fa") throw new HttpError(401, "Étape expirée. Recommencez la connexion.");
+    const admin = await db.prepare("SELECT * FROM admins WHERE id = ?").get(p.sub);
+    if (!admin) throw new HttpError(404, "Administrateur non trouvé.");
+    return { code: totp(admin.totp_secret) };
+  });
 
   const adminSessionInfo = (admin, s) => ({
     user: { id: Number(admin.id), username: admin.username, displayName: admin.display_name, role: admin.role, avatar: admin.avatar },

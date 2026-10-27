@@ -145,9 +145,11 @@ export default function AdminLogin() {
           <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 bg-[#1D4E5B]/50 rounded-xl flex items-center justify-center text-xl"><I e="📱" /></div>
-              <div><h2 className="text-white font-bold text-lg" style={{ fontFamily: "var(--font-body)" }}>Double authentification</h2><p className="text-[#8FAFB7] text-xs">Étape 2 / 2 — Code OTP</p></div>
+              <div><h2 className="text-white font-bold text-lg" style={{ fontFamily: "var(--font-body)" }}>Double authentification</h2><p className="text-[#8FAFB7] text-xs">Étape 2 / 2 — Code de sécurité</p></div>
             </div>
-            <p className="text-[#8FAFB7] text-sm mb-6 leading-relaxed">Saisissez le code à 6 chiffres affiché dans votre application d'authentification (Google Authenticator, Authy…).</p>
+            <p className="text-[#8FAFB7] text-sm mb-6 leading-relaxed">
+              Entrez le code à 6 chiffres affiché dans votre application Authenticator.
+            </p>
             <form onSubmit={(e) => { e.preventDefault(); void verify(otp.join("")); }} className="flex flex-col gap-6">
               <div className="flex gap-3 justify-center" aria-label="Code OTP à 6 chiffres">
                 {otp.map((digit, i) => (
@@ -157,30 +159,12 @@ export default function AdminLogin() {
                 ))}
               </div>
               {error && <div className="flex items-start gap-2 bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-sm" role="alert"><span><I e="⚠️" /></span><span>{error}</span></div>}
-              <button type="submit" disabled={otp.some((d) => !d) || loading} className="w-full py-4 bg-[#1D4E5B] text-white rounded-xl font-bold text-base hover:bg-[#163A43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+              <button type="submit" disabled={otp.some((d) => !d) || loading} className="w-full py-4 bg-[#1D4E5B] text-white rounded-xl font-bold text-base hover:bg-[#163A43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer">
                 {loading ? <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Rich text={"✓ Valider l'accès"} />}
               </button>
             </form>
-            <details className="mt-5 pt-4 border-t border-white/10 text-xs text-[#8FAFB7] group">
-              <summary className="font-bold text-amber-300 hover:text-amber-200 cursor-pointer list-none flex items-center justify-between">
-                <span>🔑 Configurer Google Authenticator / Authy</span>
-                <span className="text-xs text-[#8FAFB7] group-open:rotate-180 transition-transform">▼</span>
-              </summary>
-              <div className="mt-3 p-3.5 bg-white/5 rounded-xl border border-white/10 space-y-2 text-left leading-relaxed">
-                <p>1. Dans votre application (Google Authenticator, Authy...), appuyez sur <strong>+</strong> puis <strong>« Saisir une clé fournie »</strong>.</p>
-                <p>2. Nom du compte : <strong className="text-white">Proximo Super Admin</strong></p>
-                <p>3. Clé secrète :</p>
-                <div className="bg-black/30 p-2 rounded-lg font-mono text-amber-300 text-center select-all tracking-wider text-xs border border-white/10">
-                  QVNPQMMMLMSRD3BQ7UC3UGHTVPGWREWW
-                </div>
-                <p className="text-[11px] text-[#9CA3AF]">4. Type : Basée sur l'heure (TOTP 30s). Le code à 6 chiffres apparaîtra automatiquement.</p>
-                <p className="text-[11px] text-[#9CA3AF] border-t border-white/10 pt-2">
-                  Astuce console : lancez <code className="text-white bg-white/10 px-1 py-0.5 rounded font-mono">npm run admin:totp</code> pour afficher le code en direct.
-                </p>
-              </div>
-            </details>
 
-            <div className="mt-5 text-xs"><button onClick={() => { setStep("credentials"); setOtp(["", "", "", "", "", ""]); setError(""); }} className="text-[#8FAFB7] hover:text-white transition-colors"><I e="←" /> Retour</button></div>
+            <div className="mt-6 text-xs"><button onClick={() => { setStep("credentials"); setOtp(["", "", "", "", "", ""]); setError(""); }} className="text-[#8FAFB7] hover:text-white transition-colors cursor-pointer"><I e="←" /> Retour</button></div>
           </div>
         )}
       </div>
