@@ -1,4 +1,10 @@
-import { DatabaseSync } from "node:sqlite";
+let DatabaseSync = null;
+try {
+  const sqliteMod = await import("node:sqlite");
+  DatabaseSync = sqliteMod.DatabaseSync;
+} catch {
+  // node:sqlite est indisponible (ex: Node < 22 sur Vercel serverless)
+}
 import fs from "node:fs";
 import path from "node:path";
 import pg from "pg";
@@ -432,6 +438,9 @@ export async function openDb(file) {
   }
 
   // SQLite fallback
+  if (!DatabaseSync) {
+    throw new Error("SQLite n'est pas disponible dans cet environnement. Définissez DATABASE_URL pour utiliser Neon PostgreSQL.");
+  }
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec(SCHEMA_SQLITE);

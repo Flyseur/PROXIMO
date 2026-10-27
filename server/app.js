@@ -802,6 +802,10 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
 
   // ── Serveur HTTP ────────────────────────────────────────────────────────────
   async function readBody(req) {
+    if (req.body && typeof req.body === "object") return req.body;
+    if (typeof req.body === "string" && req.body.length > 0) {
+      try { return JSON.parse(req.body); } catch { throw bad("JSON invalide."); }
+    }
     const chunks = [];
     let size = 0;
     for await (const ch of req) {
@@ -829,8 +833,9 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     fs.createReadStream(file).pipe(res);
   }
 
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, "http://x");
+  const handler = async (req, res) => {
+    const rawUrl = req.originalUrl || req.url || "/";
+    let url = new URL(rawUrl, "http://x");
     const sec = {
       "x-content-type-options": "nosniff", "x-frame-options": "DENY", "referrer-policy": "strict-origin-when-cross-origin",
     };
@@ -856,7 +861,9 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
       logger.error("Erreur serveur :", e);
       send(500, { error: "Erreur interne du serveur." });
     }
-  });
+  };
 
-  return { server, db, credentials, close: async () => { server.close(); if (typeof db?.close === "function") await db.close(); } };
+  const server = http.createServer(handler);
+
+  return { server, handler, db, credentials, close: async () => { server.close(); if (typeof db?.close === "function") await db.close(); } };
 }
