@@ -25,7 +25,7 @@ interface PaymentModalProps {
 
 type Operator = "wave" | "orange_money" | "mtn_momo";
 
-const OPERATORS: { id: Operator; label: string; sub: string; color: string; border: string; bg: string; badge: string; icon: string }[] = [
+const OPERATORS: { id: Operator; label: string; sub: string; color: string; border: string; bg: string; badge: string; icon: string; logo: string }[] = [
   {
     id: "wave",
     label: "Wave Côte d'Ivoire",
@@ -35,6 +35,7 @@ const OPERATORS: { id: Operator; label: string; sub: string; color: string; bord
     bg: "bg-[#E6F5FC]",
     badge: "bg-[#0096E6] text-white",
     icon: "🌊",
+    logo: "/payments/wave.jpg",
   },
   {
     id: "orange_money",
@@ -45,6 +46,7 @@ const OPERATORS: { id: Operator; label: string; sub: string; color: string; bord
     bg: "bg-[#FFF3E6]",
     badge: "bg-[#FF7900] text-white",
     icon: "🍊",
+    logo: "/payments/orange-money.png",
   },
   {
     id: "mtn_momo",
@@ -55,6 +57,7 @@ const OPERATORS: { id: Operator; label: string; sub: string; color: string; bord
     bg: "bg-[#FFFDE6]",
     badge: "bg-[#FFCC00] text-[#1D4E5B]",
     icon: "🟡",
+    logo: "/payments/mtn-momo.jpg",
   },
 ];
 
@@ -83,6 +86,8 @@ export default function PaymentModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [currentRef, setCurrentRef] = useState<string | null>(null);
 
   // Synchroniser état lors de l'ouverture
   useEffect(() => {
@@ -98,6 +103,8 @@ export default function PaymentModal({
     } else {
       setStep("form");
       setReceipt(null);
+      setPaymentUrl(null);
+      setCurrentRef(null);
       if (defaultPhone) setPhone(defaultPhone);
       if (defaultName) setCustomerName(defaultName);
       if (request?.amount && request.amount > 0) {
@@ -106,6 +113,32 @@ export default function PaymentModal({
       }
     }
   }, [isOpen, receiptReference, request, defaultPhone, defaultName]);
+
+  // Polling automatique de vérification de paiement GeniusPay (toutes les 3s)
+  useEffect(() => {
+    if (step !== "processing" || !currentRef) return;
+    let stopped = false;
+    const interval = setInterval(async () => {
+      if (stopped) return;
+      try {
+        const verifyRes = await api.get<{ success: boolean; data: { status: string } }>(
+          `/geniuspay/verify/${encodeURIComponent(currentRef)}`
+        );
+        if (verifyRes?.data?.status === "completed") {
+          stopped = true;
+          clearInterval(interval);
+          const fullReceipt = await api.get<PaymentReceipt>(`/payments/receipt/${currentRef}`);
+          setReceipt(fullReceipt);
+          setStep("receipt");
+          if (onPaymentSuccess) onPaymentSuccess(fullReceipt);
+        }
+      } catch {}
+    }, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [step, currentRef, onPaymentSuccess]);
 
   if (!isOpen) return null;
 
@@ -150,6 +183,8 @@ export default function PaymentModal({
         customerName: string;
         requestId: number;
         status: string;
+        paymentUrl?: string | null;
+        checkoutUrl?: string | null;
         date: string;
       }>("/payments", {
         requestId: request.id,
@@ -157,18 +192,41 @@ export default function PaymentModal({
         phone,
         amount: payAmount,
         customerName: customerName || undefined,
-      }, "user");
+      }, false);
 
-      // Charger le reçu complet
-      const fullReceipt = await api.get<PaymentReceipt>(`/payments/receipt/${res.reference}`);
-      setReceipt(fullReceipt);
-      setStep("receipt");
-      if (onPaymentSuccess) {
-        onPaymentSuccess(fullReceipt);
+      setCurrentRef(res.reference);
+
+      const targetUrl = res.paymentUrl || res.checkoutUrl || null;
+      if (targetUrl) {
+        setPaymentUrl(targetUrl);
+        try {
+          window.open(targetUrl, "_blank");
+        } catch {}
+      } else {
+        // Mode simulation directe
+        const fullReceipt = await api.get<PaymentReceipt>(`/payments/receipt/${res.reference}`);
+        setReceipt(fullReceipt);
+        setStep("receipt");
+        if (onPaymentSuccess) {
+          onPaymentSuccess(fullReceipt);
+        }
       }
     } catch (err: any) {
       setError(err?.message || "Échec de l'initiation du paiement.");
       setStep("form");
+    }
+  }
+
+  async function handleSimulateSuccess() {
+    if (!currentRef) return;
+    try {
+      await api.post(`/geniuspay/simulate-success/${encodeURIComponent(currentRef)}`);
+      const fullReceipt = await api.get<PaymentReceipt>(`/payments/receipt/${currentRef}`);
+      setReceipt(fullReceipt);
+      setStep("receipt");
+      if (onPaymentSuccess) onPaymentSuccess(fullReceipt);
+    } catch (err: any) {
+      setError(err?.message || "Erreur simulation paiement.");
     }
   }
 
@@ -198,7 +256,7 @@ export default function PaymentModal({
                 {step === "receipt" ? "Reçu officiel de paiement" : "Paiement d'acompte sécurisé"}
               </h3>
               <p className="text-xs text-white/80">
-                {step === "receipt" ? "Garantie de séquestre Proximo CI" : "Wave · Orange Money · MTN MoMo"}
+                {step === "receipt" ? "Garantie de séquestre Proximo CI" : "Paiement sécurisé GeniusPay CI · Wave · Orange · MTN"}
               </p>
             </div>
           </div>
@@ -250,7 +308,7 @@ export default function PaymentModal({
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <span className="text-2xl">{op.icon}</span>
+                          <img src={op.logo} alt={op.label} className="h-8 w-auto max-w-[90px] object-contain rounded-md" />
                           <div>
                             <p className="font-bold text-[#1D4E5B] text-sm">{op.label}</p>
                             <p className="text-xs text-[#6B7280]">{op.sub}</p>
@@ -386,25 +444,58 @@ export default function PaymentModal({
             </form>
           )}
 
-          {/* ÉTAPE 2 : ATTENTE VALIDATION USSD / PUSH */}
+          {/* ÉTAPE 2 : ATTENTE VALIDATION USSD / PUSH / WAVE */}
           {step === "processing" && (
-            <div className="py-10 text-center space-y-5">
+            <div className="py-8 text-center space-y-5 animate-fade-in">
               <div className="relative w-20 h-20 mx-auto">
                 <div className="absolute inset-0 rounded-full border-4 border-[#E8F2F5] border-t-[#F26522] animate-spin" />
-                <div className="absolute inset-2 rounded-full bg-[#FFF2EB] flex items-center justify-center text-2xl">
-                  {currentOp.icon}
+                <div className="absolute inset-2 rounded-full bg-[#FFF2EB] flex items-center justify-center p-2">
+                  <img src={currentOp.logo} alt={currentOp.label} className="h-7 w-auto object-contain" />
                 </div>
               </div>
               <div>
-                <h4 className="text-xl font-bold text-[#1D4E5B]">Confirmation push en cours...</h4>
-                <p className="text-sm text-[#6B7280] max-w-sm mx-auto mt-2">
-                  Une notification de validation a été envoyée sur votre compte <strong>{currentOp.label}</strong> au numéro <strong>{phone}</strong>.
+                <h4 className="text-xl font-bold text-[#1D4E5B]">Confirmation du paiement en cours</h4>
+                <p className="text-sm text-[#6B7280] max-w-sm mx-auto mt-1.5">
+                  Transaction GeniusPay CI pour votre compte <strong>{currentOp.label}</strong> au numéro <strong>{phone}</strong>.
                 </p>
+                {currentRef && (
+                  <p className="text-xs font-mono font-bold text-[#1D4E5B] mt-1">Réf : {currentRef}</p>
+                )}
               </div>
+
+              {/* Bouton direct pour ouvrir l'application Wave ou le checkout */}
+              {paymentUrl && (
+                <div className="max-w-sm mx-auto space-y-2">
+                  <a
+                    href={paymentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-6 bg-[#0096E6] hover:bg-[#0085CC] text-white font-bold rounded-2xl text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:scale-[1.01]"
+                  >
+                    <span>Ouvrir le paiement {operator === "wave" ? "Wave" : "Mobile Money"} ({fmtFcfa(amountMode === "custom" ? parseInt(customAmountStr, 10) : amount)})</span>
+                    <span>→</span>
+                  </a>
+                  <p className="text-[11px] text-[#9CA3AF]">
+                    Cliquez si l'application ne s'est pas ouverte automatiquement.
+                  </p>
+                </div>
+              )}
+
               <div className="bg-[#F4F8F9] border border-[#E8F2F5] rounded-2xl p-4 max-w-sm mx-auto text-xs text-[#6B7280]">
-                <p>Composez votre code secret sur votre téléphone pour valider le transfert sécurisé de <strong>{fmtFcfa(amountMode === "custom" ? parseInt(customAmountStr, 10) : amount)}</strong>.</p>
+                <p>Validez avec votre code secret Mobile Money pour bloquer l'acompte de <strong>{fmtFcfa(amountMode === "custom" ? parseInt(customAmountStr, 10) : amount)}</strong> en séquestre garanti.</p>
               </div>
-              <p className="text-xs text-[#9CA3AF]">Sécurisation du flux par protocole TLS 1.3 & API Mobile Money CI</p>
+
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSimulateSuccess}
+                  className="text-xs text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 py-2 px-4 rounded-xl font-medium transition-colors"
+                >
+                  Simuler la validation (Démo Test)
+                </button>
+              </div>
+
+              <p className="text-[11px] text-[#9CA3AF]">Sécurisation du flux par protocole TLS 1.3 & GeniusPay Côte d'Ivoire</p>
             </div>
           )}
 

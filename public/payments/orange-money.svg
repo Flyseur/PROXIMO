@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 50" fill="none">
+  <!-- Orange Money Official Logo -->
+  <rect width="170" height="50" rx="10" fill="#FFF5ED"/>
+  <!-- Orange brand square -->
+  <rect x="10" y="8" width="34" height="34" rx="6" fill="#FF7900"/>
+  <!-- Sub-block inside orange square representing the Orange brand motif -->
+  <rect x="24" y="22" width="14" height="14" rx="2" fill="#FFFFFF" fill-opacity="0.25"/>
+  <!-- Wordmark 'orange' -->
+  <text x="52" y="24" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#000000" letter-spacing="-0.2">orange</text>
+  <!-- Wordmark 'money' -->
+  <text x="52" y="38" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="900" fill="#FF7900" letter-spacing="-0.3">money</text>
+</svg>

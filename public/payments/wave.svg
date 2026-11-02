@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 50" fill="none">
+  <!-- Wave Logo: Cyan background circle + Penguin + 'wave' text -->
+  <rect width="160" height="50" rx="10" fill="#EBF8FD"/>
+  <g transform="translate(10, 5)">
+    <!-- Cyan Circle Badge -->
+    <circle cx="20" cy="20" r="18" fill="#1DC3F4"/>
+    <!-- Penguin Body -->
+    <path d="M20 7 C14 7 10 12 10 21 C10 27 12 32 15 34 C16 34.5 17 35 18 35 L22 35 C23 35 24 34.5 25 34 C28 32 30 27 30 21 C30 12 26 7 20 7 Z" fill="#0A1128"/>
+    <!-- White Belly -->
+    <path d="M20 16 C16 16 14 20 14 25 C14 29 16 33 20 33 C24 33 26 29 26 25 C26 20 24 16 20 16 Z" fill="#FFFFFF"/>
+    <!-- Eyes -->
+    <circle cx="16.5" cy="13.5" r="1.5" fill="#FFFFFF"/>
+    <circle cx="16.5" cy="13.5" r="0.8" fill="#0A1128"/>
+    <circle cx="23.5" cy="13.5" r="1.5" fill="#FFFFFF"/>
+    <circle cx="23.5" cy="13.5" r="0.8" fill="#0A1128"/>
+    <!-- Orange Beak -->
+    <polygon points="18,15.5 22,15.5 20,18.5" fill="#FF9E00"/>
+    <!-- Yellow feet -->
+    <ellipse cx="16" cy="35" rx="2.5" ry="1.2" fill="#FF9E00"/>
+    <ellipse cx="24" cy="35" rx="2.5" ry="1.2" fill="#FF9E00"/>
+  </g>
+  <!-- Brand text: wave -->
+  <text x="56" y="32" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="900" fill="#0B132B" letter-spacing="-0.5">wave</text>
+</svg>

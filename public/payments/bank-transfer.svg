@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Rounded banking badge -->
+  <rect width="48" height="48" rx="10" fill="#1D4E5B"/>
+  
+  <!-- Bank Roof / Pediment -->
+  <polygon points="24,8 8,17 40,17" fill="#FFFFFF"/>
+  <rect x="7" y="17" width="34" height="2.5" rx="1" fill="#F26522"/>
+  
+  <!-- 4 Classical Bank Pillars -->
+  <rect x="10.5" y="21" width="3.5" height="13" rx="1" fill="#FFFFFF"/>
+  <rect x="18" y="21" width="3.5" height="13" rx="1" fill="#FFFFFF"/>
+  <rect x="26.5" y="21" width="3.5" height="13" rx="1" fill="#FFFFFF"/>
+  <rect x="34" y="21" width="3.5" height="13" rx="1" fill="#FFFFFF"/>
+  
+  <!-- Steps / Base -->
+  <rect x="7" y="34" width="34" height="2.5" rx="1" fill="#FFFFFF"/>
+  <rect x="5" y="37" width="38" height="3" rx="1" fill="#F26522"/>
+  
+  <!-- Interbank Transfer Curved Arrows Badge in Bottom-Right -->
+  <g transform="translate(28, 28)">
+    <circle cx="10" cy="10" r="9" fill="#F26522" stroke="#FFFFFF" stroke-width="1.8"/>
+    <!-- Left-to-right top arrow -->
+    <path d="M6 8 L13 8 M11 6 L13 8 L11 10" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Right-to-left bottom arrow -->
+    <path d="M14 12 L7 12 M9 10 L7 12 L9 14" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

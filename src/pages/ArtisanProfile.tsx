@@ -7,6 +7,7 @@ import { useFetch } from "../lib/useFetch";
 import { fmtDate, api, ApiError, userToken, type ArtisanDetail, type PublicUser } from "../lib/api";
 
 import { I, Rich } from "../components/Icon";
+import { MetaVerifiedBadge, VerifiedPill } from "../components/Badges";
 export default function ArtisanProfile() {
   const { id } = useParams<{ id: string }>();
   const { data: a, loading, error } = useFetch<ArtisanDetail>(id ? `/artisans/${id}` : null);
@@ -99,65 +100,81 @@ export default function ArtisanProfile() {
   const fullStars = Math.round(currentRating);
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12">
-      <nav className="text-sm text-[#6B7280] mb-8 flex items-center gap-2" aria-label="Fil d'Ariane">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-12 w-full max-w-full overflow-x-hidden">
+      <nav className="text-xs sm:text-sm text-[#6B7280] mb-4 sm:mb-8 flex items-center gap-1.5 sm:gap-2 flex-wrap" aria-label="Fil d'Ariane">
         <Link to="/" className="hover:text-[#F26522] transition-colors"><I e="🏠" /> Accueil</Link><span aria-hidden="true">/</span>
         <Link to="/recherche" className="hover:text-[#F26522] transition-colors"><I e="🔍" /> Recherche</Link><span aria-hidden="true">/</span>
-        <span className="text-[#1D4E5B] font-semibold">{a.name}</span>
+        <span className="text-[#1D4E5B] font-semibold truncate max-w-[180px] sm:max-w-none">{a.name}</span>
       </nav>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-        <div className="lg:col-span-2">
-          <div className="flex items-start gap-6 mb-8 p-6 bg-[#F4F8F9] rounded-2xl border-2 border-[#E8F2F5]">
-            {a.img ? (
-              <img src={a.img} alt={`Photo de profil de ${a.name}`} className="w-24 h-24 rounded-2xl object-cover bg-[#E8F2F5] flex-shrink-0 shadow-sm" />
-            ) : (
-              <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#1D4E5B] to-[#2B6D7F] text-white flex items-center justify-center text-3xl font-black flex-shrink-0 shadow-sm">
-                {a.name.split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase() || "PRO"}
-              </div>
-            )}
-            <div className="flex-1">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h1 className="text-4xl text-[#1D4E5B]">{a.name}</h1>
-                  <p className="text-[#6B7280] text-lg mt-1 font-medium">{a.trade}</p>
-                  <p className="text-sm text-[#F26522] font-bold mt-1"><I e="📍" /> {a.commune}{a.zone ? ` · ${a.zone}` : ""}</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-10">
+        <div className="lg:col-span-2 min-w-0">
+          <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-6 mb-6 sm:mb-8 p-4 sm:p-6 bg-[#F4F8F9] rounded-2xl border-2 border-[#E8F2F5] w-full">
+            <div className="flex items-center justify-between w-full sm:w-auto gap-3">
+              {a.img ? (
+                <img src={a.img} alt={`Photo de profil de ${a.name}`} className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover bg-[#E8F2F5] shrink-0 shadow-sm" />
+              ) : (
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-[#1D4E5B] to-[#2B6D7F] text-white flex items-center justify-center text-2xl sm:text-3xl font-black shrink-0 shadow-sm">
+                  {a.name.split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase() || "PRO"}
                 </div>
-                <span className={`text-sm px-3 py-1.5 rounded-full font-bold flex-shrink-0 ${a.available ? "bg-green-100 text-green-700" : "bg-red-50 text-red-600"}`}>{a.available ? <Rich text={"✓ Disponible"} /> : <Rich text={"✗ Occupé"} />}</span>
+              )}
+              <span className={`sm:hidden text-xs px-3 py-1.5 rounded-full font-bold shrink-0 ${a.available ? "bg-green-100 text-green-700" : "bg-red-50 text-red-600"}`}>
+                {a.available ? <Rich text={"✓ Disponible"} /> : <Rich text={"✗ Occupé"} />}
+              </span>
+            </div>
+
+            <div className="flex-1 min-w-0 w-full">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl text-[#1D4E5B] font-black break-words leading-tight flex items-center gap-2">
+                    <span>{a.name}</span>
+                    {a.verified && (
+                      <MetaVerifiedBadge
+                        className="w-6 h-6 sm:w-7 sm:h-7"
+                        title="Artisan vérifié et certifié (Style officiel Facebook / Instagram)"
+                      />
+                    )}
+                  </h1>
+                  <p className="text-[#6B7280] text-sm sm:text-base mt-0.5 sm:mt-1 font-medium">{a.trade}</p>
+                  <p className="text-xs sm:text-sm text-[#F26522] font-bold mt-1 flex items-center gap-1"><I e="📍" /> {a.commune}{a.zone ? ` · ${a.zone}` : ""}</p>
+                </div>
+                <span className={`hidden sm:inline-block text-sm px-3 py-1.5 rounded-full font-bold shrink-0 ${a.available ? "bg-green-100 text-green-700" : "bg-red-50 text-red-600"}`}>
+                  {a.available ? <Rich text={"✓ Disponible"} /> : <Rich text={"✗ Occupé"} />}
+                </span>
               </div>
-              <div className="flex items-center gap-4 mt-4 flex-wrap">
+              <div className="flex items-center gap-2 sm:gap-4 mt-3 sm:mt-4 flex-wrap text-xs sm:text-sm">
                 <button
                   type="button"
                   onClick={openReviewForm}
                   className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer group text-left"
                   title="Voir les avis ou laisser un avis"
                 >
-                  <div className="flex items-center gap-1 text-base" aria-label={`Note moyenne : ${currentRating} sur 5`}>
+                  <div className="flex items-center gap-0.5 text-sm sm:text-base" aria-label={`Note moyenne : ${currentRating} sur 5`}>
                     {[1, 2, 3, 4, 5].map((s) => (
                       <I key={s} e="★" className={s <= fullStars ? "text-amber-400 drop-shadow-xs" : "text-gray-300"} />
                     ))}
                   </div>
-                  <span className="text-sm font-bold text-[#1D4E5B] ml-1">{currentRating}</span>
-                  <span className="text-sm text-[#F26522] group-hover:underline font-semibold ml-1">({currentReviewsCount} avis · Noter <I e="✍️" />)</span>
+                  <span className="text-xs sm:text-sm font-bold text-[#1D4E5B] ml-1">{currentRating}</span>
+                  <span className="text-xs sm:text-sm text-[#F26522] group-hover:underline font-semibold ml-1">({currentReviewsCount} avis · Noter <I e="✍️" />)</span>
                 </button>
-                {a.years != null && (<><span className="text-[#D1D9DC]">|</span><span className="text-sm text-[#6B7280]"><I e="⏱" /> {a.years} ans d'expérience</span></>)}
-                {a.verified && (<><span className="text-[#D1D9DC]">|</span><span className="text-sm text-[#6B7280]"><I e="🏅" /> Certifié</span></>)}
+                {a.years != null && (<><span className="text-[#D1D9DC]">|</span><span className="text-xs sm:text-sm text-[#6B7280] flex items-center gap-1"><I e="⏱" /> {a.years} ans</span></>)}
+                {a.verified && (<><span className="text-[#D1D9DC]">|</span><VerifiedPill /></>)}
               </div>
-              <div className="mt-4"><VoiceAssistant label="Écouter ce profil" text={profileText} /></div>
+              <div className="mt-3 sm:mt-4"><VoiceAssistant label="Écouter ce profil" text={profileText} /></div>
             </div>
           </div>
 
-          <div className="border-b-2 border-[#E8F2F5] mb-8" role="tablist" aria-label="Sections du profil">
+          <div className="flex overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b-2 border-[#E8F2F5] mb-6 sm:mb-8" role="tablist" aria-label="Sections du profil">
             {([["portfolio", "🖼️ Portfolio"], ["avis", "⭐ Avis clients"], ["infos", "ℹ️ Informations"]] as const).map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)} role="tab" aria-selected={activeTab === tab}
-                className={`px-5 pb-4 text-sm font-bold transition-colors border-b-2 -mb-[2px] mr-2 ${activeTab === tab ? "border-[#F26522] text-[#F26522]" : "border-transparent text-[#6B7280] hover:text-[#1D4E5B]"}`}><Rich text={label} /></button>
+                className={`px-3.5 sm:px-5 pb-3 sm:pb-4 text-xs sm:text-sm font-bold transition-colors border-b-2 -mb-[2px] mr-2 whitespace-nowrap shrink-0 ${activeTab === tab ? "border-[#F26522] text-[#F26522]" : "border-transparent text-[#6B7280] hover:text-[#1D4E5B]"}`}><Rich text={label} /></button>
             ))}
           </div>
 
           <div role="tabpanel">
             {activeTab === "portfolio" && (
               a.portfolio.length ? (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   {a.portfolio.map((src, i) => <img key={i} src={src} alt={`Réalisation ${i + 1} par ${a.name}`} className="rounded-2xl object-cover w-full h-48 bg-[#E8F2F5]" />)}
                 </div>
               ) : <p className="text-[#6B7280]">Cet artisan n'a pas encore ajouté de réalisations.</p>
@@ -166,7 +183,7 @@ export default function ArtisanProfile() {
             {activeTab === "avis" && (
               <div className="flex flex-col gap-6">
                 {/* Header score & CTA */}
-                <div className="bg-[#F4F8F9] rounded-2xl p-6 border-2 border-[#E8F2F5] flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="bg-[#F4F8F9] rounded-2xl p-4 sm:p-6 border-2 border-[#E8F2F5] flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
                     <div className="text-4xl font-extrabold text-[#1D4E5B]">{currentRating}</div>
                     <div>
@@ -189,7 +206,7 @@ export default function ArtisanProfile() {
 
                 {/* Review Form */}
                 {showReviewForm && (
-                  <form id="review-form-section" onSubmit={handleSubmitReview} className="bg-white rounded-2xl p-6 border-2 border-[#F26522]/30 shadow-md flex flex-col gap-4 animate-in fade-in duration-200 scroll-mt-28">
+                  <form id="review-form-section" onSubmit={handleSubmitReview} className="bg-white rounded-2xl p-4 sm:p-6 border-2 border-[#F26522]/30 shadow-md flex flex-col gap-4 animate-in fade-in duration-200 scroll-mt-28">
                     <h3 className="font-bold text-[#1D4E5B] text-lg flex items-center gap-2">
                       <I e="⭐" /> Votre retour d'expérience avec {a.name}
                     </h3>
@@ -204,7 +221,7 @@ export default function ArtisanProfile() {
 
                     <div>
                       <label className="block text-xs font-bold text-[#1D4E5B] mb-1.5">Note globale * (cliquez sur les étoiles pour noter)</label>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-0.5 sm:gap-1.5 flex-wrap">
                         {[1, 2, 3, 4, 5].map((star) => {
                           const activeRating = hoverRating ?? reviewRating;
                           const isFilled = star <= activeRating;
@@ -258,7 +275,7 @@ export default function ArtisanProfile() {
                       />
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-2">
+                    <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 pt-2">
                       <button
                         type="button"
                         onClick={() => setShowReviewForm(false)}
@@ -328,14 +345,14 @@ export default function ArtisanProfile() {
           </div>
         </div>
 
-        <div>
-          <div className="bg-white border-2 border-[#1D4E5B] rounded-2xl p-6 sticky top-24">
-            <p className="text-3xl font-bold text-[#1D4E5B] mb-1">{a.priceNumber || a.price} <span className="text-base font-normal text-[#6B7280]">{a.priceUnit}</span></p>
+        <div className="min-w-0">
+          <div className="bg-white border-2 border-[#1D4E5B] rounded-2xl p-4 sm:p-6 lg:sticky lg:top-24">
+            <p className="text-2xl sm:text-3xl font-bold text-[#1D4E5B] mb-1 break-words">{a.priceNumber || a.price} <span className="text-base font-normal text-[#6B7280]">{a.priceUnit}</span></p>
             <p className="text-sm text-[#6B7280] mb-6 flex items-center gap-1.5"><span><I e="⚡" /></span> Devis gratuit sous 24h</p>
             <div className="flex flex-col gap-3">
-              <Link to={`/poster-offre?artisan=${a.id}`} className="flex items-center justify-center gap-2 w-full py-4 bg-[#F26522] text-white rounded-xl font-bold text-base hover:bg-[#C84E10] transition-colors shadow-md"><I e="📋" /> Demander un devis</Link>
+              <Link to={`/poster-offre?artisan=${a.id}`} className="flex items-center justify-center gap-2 w-full py-3.5 sm:py-4 bg-[#F26522] text-white rounded-xl font-bold text-sm sm:text-base hover:bg-[#C84E10] transition-colors shadow-md"><I e="📋" /> Demander un devis</Link>
               <WhatsAppButton phone={a.phone} message={`Bonjour ${a.name}, je vous contacte via Proximo CI pour un devis !`} label="Contacter par WhatsApp" size="md" className="w-full justify-center" />
-              <a href={`tel:+${a.phone}`} className="flex items-center justify-center gap-2 w-full py-4 border-2 border-[#1D4E5B] text-[#1D4E5B] rounded-xl font-bold text-base hover:bg-[#E8F2F5] transition-colors"><I e="📞" /> Appeler directement</a>
+              <a href={`tel:+${a.phone}`} className="flex items-center justify-center gap-2 w-full py-3.5 sm:py-4 border-2 border-[#1D4E5B] text-[#1D4E5B] rounded-xl font-bold text-sm sm:text-base hover:bg-[#E8F2F5] transition-colors"><I e="📞" /> Appeler directement</a>
               <button
                 type="button"
                 onClick={openReviewForm}

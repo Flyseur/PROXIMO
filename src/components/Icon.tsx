@@ -17,7 +17,8 @@ import {
   RiInformationFill, RiRefreshLine, RiSendPlaneFill, RiEyeFill, RiEyeCloseFill,
   RiHandHeartFill, RiForbid2Fill, RiHashtag, RiWalkFill, RiImage2Fill, RiEdit2Fill,
   RiTrophyFill, RiMedalFill, RiGraduationCapFill, RiLogoutBoxRFill, RiBriefcase4Fill,
-  RiAlarmWarningFill, RiBattery2ChargeFill, RiCalendar2Fill
+  RiAlarmWarningFill, RiBattery2ChargeFill, RiCalendar2Fill,
+  RiVipCrown2Fill, RiVipDiamondFill, RiVerifiedBadgeFill
 } from "react-icons/ri";
 import {
   TbHelmet, TbWall, TbWindow, TbConfetti, TbCookie, TbBuildingSkyscraper,
@@ -66,8 +67,11 @@ const MAP: Record<string, IconType> = {
   "👨‍🍳": RiRestaurant2Fill,
   "🍽": RiCupFill,
   "🍽️": RiCupFill,
+  "📷": RiCamera3Fill,
   "📸": RiCamera3Fill,
   "🎬": RiMovie2Fill,
+  "👑": RiVipCrown2Fill,
+  "💎": RiVipDiamondFill,
   "🎤": RiMic2Fill,
   "🎙": RiMic2Fill,
   "🎙️": RiMic2Fill,

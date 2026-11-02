@@ -30,17 +30,17 @@ export default function Search() {
   const items = data?.items ?? [];
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-12">
-      <h1 className="text-5xl text-[#1D4E5B] mb-2">Rechercher un artisan</h1>
-      <p className="text-[#6B7280] mb-8">Des professionnels vérifiés en Côte d'Ivoire.</p>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-12 w-full">
+      <h1 className="text-3xl sm:text-5xl font-black text-[#1D4E5B] mb-1.5 sm:mb-2">Rechercher un artisan</h1>
+      <p className="text-sm sm:text-base text-[#6B7280] mb-5 sm:mb-8">Des professionnels vérifiés en Côte d'Ivoire.</p>
 
-      <div className="flex gap-3 mb-5 flex-wrap items-center" role="search">
-        <div className="flex-1 min-w-64 flex items-center gap-3 border-2 border-[#D1D9DC] rounded-xl px-4 py-2.5 focus-within:border-[#1D4E5B] transition-colors bg-white shadow-xs">
+      <div className="flex flex-col sm:flex-row gap-3 mb-5 sm:flex-wrap sm:items-center" role="search">
+        <div className="w-full sm:flex-1 sm:min-w-64 min-w-0 flex items-center gap-3 border-2 border-[#D1D9DC] rounded-xl px-3 sm:px-4 py-2.5 focus-within:border-[#1D4E5B] transition-colors bg-white shadow-xs">
           <span className="w-8 h-8 rounded-lg bg-orange-50 text-[#F26522] flex items-center justify-center shrink-0 text-base" aria-hidden="true">
             <I e="🔍" />
           </span>
           <input type="search" placeholder="Nom, métier..." value={query} onChange={(e) => setQuery(e.target.value)}
-            className="flex-1 text-base text-[#1A1A1A] focus:outline-none placeholder-[#9CA3AF] bg-transparent" aria-label="Rechercher par nom ou métier" />
+            className="flex-1 min-w-0 text-base text-[#1A1A1A] focus:outline-none placeholder-[#9CA3AF] bg-transparent" aria-label="Rechercher par nom ou métier" />
           <VoiceAssistant iconOnly label="Recherche vocale" text="Dites le nom d'un artisan ou d'un métier pour lancer la recherche." />
         </div>
         <CommuneSelect

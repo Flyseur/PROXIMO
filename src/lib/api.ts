@@ -84,6 +84,30 @@ export interface AuthChallenge { challengeId: string; maskedPhone: string; devCo
 export interface PublicUser {
   id: number; role: "artisan" | "client"; firstName: string; lastName: string; phone: string; email: string | null;
   commune: string | null; status: "Actif" | "En attente" | "Suspendu"; verified: boolean;
+  plan?: "Gratuit" | "Pro" | "Entreprise";
+  planExpiresAt?: string | null;
+}
+
+export interface Subscription {
+  id: number;
+  plan: "Pro" | "Entreprise";
+  amount: number;
+  operator: "wave" | "orange_money" | "mtn_momo";
+  phone: string;
+  reference: string;
+  status: "active" | "expired" | "cancelled";
+  starts_at: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface JobQuota {
+  plan: "Gratuit" | "Pro" | "Entreprise";
+  isUnlimited: boolean;
+  limit: number | null;
+  currentCount: number;
+  remaining: number | null;
+  canPost: boolean;
 }
 
 export const COMMUNES = ["Cocody", "Yopougon", "Plateau", "Abobo", "Marcory", "Koumassi", "Treichville", "Adjamé", "Attécoubé", "Port-Bouët"];

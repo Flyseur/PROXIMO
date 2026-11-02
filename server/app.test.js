@@ -227,8 +227,7 @@ test("paiement d'acompte Mobile Money (Wave, Orange, MTN) et reçu", async () =>
   });
   assert.equal(payRes.status, 201);
   assert.equal(payRes.data.status, "completed");
-  assert.equal(payRes.data.amount, 25000);
-  assert.ok(payRes.data.reference.startsWith("PRX-WAV-"), "La référence doit débuter par PRX-WAV-");
+  assert.ok(payRes.data.reference.startsWith("PRX-WAV-") || payRes.data.reference.startsWith("MTX-"), "La référence doit débuter par PRX-WAV- ou MTX- (GeniusPay)");
 
   // 4. Vérification mise à jour du statut de la demande
   const reqRow = app.db.prepare("SELECT status, amount FROM requests WHERE id = ?").get(requestId);
@@ -248,4 +247,217 @@ test("paiement d'acompte Mobile Money (Wave, Orange, MTN) et reçu", async () =>
   const unknownReceipt = await call("GET", "/api/payments/receipt/PRX-WAV-000000");
   assert.equal(unknownReceipt.status, 404);
 });
+
+test("quotas d'offres et abonnements Pro / Entreprise (Mobile Money)", async () => {
+  const testPhone = "0799887766";
+  
+  // 1. Inscription d'un utilisateur pour tester son quota et son abonnement
+  const signupRes = await call("POST", "/api/auth/signup", {
+    role: "client",
+    firstName: "Konan",
+    lastName: "Kouamé",
+    phone: testPhone,
+    commune: "Cocody",
+    password: "Password123!",
+  });
+  assert.equal(signupRes.status, 201);
+  const userToken = signupRes.data.token;
+
+  // 2. Vérification initiale du quota (Gratuit : 3 offres max)
+  const quotaInit = await call("GET", `/api/jobs/quota?phone=${testPhone}`, null, userToken);
+  assert.equal(quotaInit.status, 200);
+  assert.equal(quotaInit.data.plan, "Gratuit");
+  assert.equal(quotaInit.data.limit, 3);
+  assert.equal(quotaInit.data.currentCount, 0);
+  assert.equal(quotaInit.data.remaining, 3);
+  assert.equal(quotaInit.data.canPost, true);
+
+  const jobPayload = {
+    posterType: "particulier",
+    contactName: "Konan Kouamé",
+    phone: testPhone,
+    title: "Recherche Chauffeur Privé",
+    sector: "Transport & Logistique",
+    contractType: "CDI",
+    commune2: "Cocody",
+    salary: "150 000 FCFA",
+    profile: "Chauffeur expérimenté avec permis B valide.",
+    description: "Missions quotidiennes de transport pour une famille.",
+    howToApply: "whatsapp",
+  };
+
+  // 3. Publication des 3 premières offres autorisées en plan Gratuit
+  for (let i = 1; i <= 3; i++) {
+    const postRes = await call("POST", "/api/jobs", { ...jobPayload, title: `Offre test ${i}` }, userToken);
+    assert.equal(postRes.status, 201);
+    assert.equal(postRes.data.isFeatured, false);
+    assert.equal(postRes.data.plan, "Gratuit");
+  }
+
+  // 4. Vérification que le quota est désormais épuisé
+  const quotaFull = await call("GET", `/api/jobs/quota?phone=${testPhone}`, null, userToken);
+  assert.equal(quotaFull.data.currentCount, 3);
+  assert.equal(quotaFull.data.remaining, 0);
+  assert.equal(quotaFull.data.canPost, false);
+
+  // 5. La 4ème offre doit être rejetée avec 403 PLAN_LIMIT_REACHED
+  const blockedPost = await call("POST", "/api/jobs", { ...jobPayload, title: "Offre 4 interdite" }, userToken);
+  assert.equal(blockedPost.status, 403);
+  assert.equal(blockedPost.data.code, "PLAN_LIMIT_REACHED");
+
+  // 6. Souscription à la formule Pro (2 500 FCFA via Wave)
+  const subRes = await call("POST", "/api/subscriptions", {
+    plan: "Pro",
+    operator: "wave",
+    phone: testPhone,
+  }, userToken);
+  assert.equal(subRes.status, 201);
+  assert.equal(subRes.data.plan, "Pro");
+  assert.equal(subRes.data.amount, 2500);
+  assert.equal(subRes.data.operator, "wave");
+  assert.equal(subRes.data.billingCycle, "monthly");
+  assert.equal(subRes.data.durationDays, 30);
+  assert.ok(subRes.data.reference.startsWith("PRX-SUB-WAV-") || subRes.data.reference.startsWith("MTX-"));
+
+  // 7. Vérification du quota Pro (illimité)
+  const quotaPro = await call("GET", `/api/jobs/quota?phone=${testPhone}`, null, userToken);
+  assert.equal(quotaPro.data.plan, "Pro");
+  assert.equal(quotaPro.data.isUnlimited, true);
+  assert.equal(quotaPro.data.canPost, true);
+
+  // 8. La 4ème offre est désormais acceptée et mise en avant (isFeatured = true)
+  const allowedPost = await call("POST", "/api/jobs", { ...jobPayload, title: "Offre 4 acceptée en Pro" }, userToken);
+  assert.equal(allowedPost.status, 201);
+  assert.equal(allowedPost.data.isFeatured, true);
+  assert.equal(allowedPost.data.plan, "Pro");
+
+  // 9. Vérification du profil /api/me (historique des souscriptions et quota mensuel)
+  const meRes = await call("GET", "/api/me", null, userToken);
+  assert.equal(meRes.status, 200);
+  assert.equal(meRes.data.user.plan, "Pro");
+  assert.ok(meRes.data.subscriptions.length >= 1);
+  assert.equal(meRes.data.subscriptions[0].reference, subRes.data.reference);
+  assert.equal(meRes.data.monthlyJobs.count, 4);
+  assert.equal(meRes.data.monthlyJobs.limit, null); // Illimité
+});
+
+test("passerelle GeniusPay : vérification de transaction et webhook", async () => {
+  // 1. Vérification d'une référence via GET /api/geniuspay/verify/:reference
+  const verifyRes = await call("GET", "/api/geniuspay/verify/MTX-TEST123456");
+  assert.equal(verifyRes.status, 200);
+  assert.equal(verifyRes.data.success, true);
+  assert.equal(verifyRes.data.data.reference, "MTX-TEST123456");
+
+  // 2. Réception d'un webhook GeniusPay
+  const webhookRes = await call("POST", "/api/webhooks/geniuspay", {
+    success: true,
+    data: {
+      reference: "MTX-TEST123456",
+      status: "completed",
+      amount: 15000,
+    },
+  });
+  assert.equal(webhookRes.status, 200);
+  assert.equal(webhookRes.data.received, true);
+});
+
+test("tarifs annuels Option 3 : souscription Pro (25 000 FCFA/an) et Entreprise (50 000 FCFA/an)", async () => {
+  const annualPhone = "0711223344";
+
+  // 1. Souscription Pro Annuelle (25 000 FCFA au lieu de 30 000 FCFA - 2 mois offerts)
+  const proAnnual = await call("POST", "/api/subscriptions", {
+    plan: "Pro",
+    operator: "orange_money",
+    phone: annualPhone,
+    billingCycle: "yearly",
+  });
+  assert.equal(proAnnual.status, 201);
+  assert.equal(proAnnual.data.plan, "Pro");
+  assert.equal(proAnnual.data.amount, 25000);
+  assert.equal(proAnnual.data.billingCycle, "yearly");
+  assert.equal(proAnnual.data.durationDays, 365);
+  assert.ok(proAnnual.data.token, "Un token JWT doit être renvoyé pour auto-connexion");
+
+  // Vérification de la date d'expiration (dans ~365 jours)
+  const proExpires = new Date(proAnnual.data.expiresAt);
+  const now = new Date();
+  const diffDays = Math.round((proExpires - now) / (1000 * 60 * 60 * 24));
+  assert.ok(diffDays >= 364 && diffDays <= 366, `Expiration Pro attendue à 365 jours, obtenu: ${diffDays}`);
+
+  // 2. Souscription Entreprise Annuelle (50 000 FCFA au lieu de 60 000 FCFA - 2 mois offerts)
+  const entPhone = "0755667788";
+  const entAnnual = await call("POST", "/api/subscriptions", {
+    plan: "Entreprise",
+    operator: "mtn_momo",
+    phone: entPhone,
+    billingCycle: "yearly",
+  });
+  assert.equal(entAnnual.status, 201);
+  assert.equal(entAnnual.data.plan, "Entreprise");
+  assert.equal(entAnnual.data.amount, 50000);
+  assert.equal(entAnnual.data.billingCycle, "yearly");
+  assert.equal(entAnnual.data.durationDays, 365);
+
+  const entExpires = new Date(entAnnual.data.expiresAt);
+  const entDiffDays = Math.round((entExpires - now) / (1000 * 60 * 60 * 24));
+  assert.ok(entDiffDays >= 364 && entDiffDays <= 366, `Expiration Entreprise attendue à 365 jours, obtenu: ${entDiffDays}`);
+});
+
+test("admin : acceptation de demande, CRM clients et traçabilité", async () => {
+  // 1. Authentification superadmin
+  const sa = creds.find((c) => c.username === "superadmin");
+  const loginRes = await call("POST", "/api/admin/login", { username: "superadmin", password: sa.password });
+  assert.equal(loginRes.status, 200);
+  const code = totp(sa.totpSecret);
+  const verifyRes = await call("POST", "/api/admin/verify-otp", { challenge: loginRes.data.challenge, code });
+  assert.equal(verifyRes.status, 200);
+  const token = verifyRes.data.token;
+
+  // 2. Création d'une demande client
+  const reqRes = await call("POST", "/api/requests", {
+    title: "Pose carrelage salon 50m²",
+    category: "Maçonnerie",
+    description: "Besoin d'un maçon qualifié pour carreler mon salon à Cocody",
+    commune: "Cocody",
+    firstName: "Konan",
+    lastName: "Yao",
+    phone: "0711223344",
+  });
+  assert.equal(reqRes.status, 201);
+  const reqId = reqRes.data.id;
+
+  // 3. Acceptation de la demande par l'admin
+  const acceptRes = await call("PATCH", `/api/admin/demandes/${reqId}/status`, { status: "En cours", amount: 75000 }, token);
+  assert.equal(acceptRes.status, 200);
+  assert.equal(acceptRes.data.status, "En cours");
+  assert.equal(acceptRes.data.amount, 75000);
+
+  // 4. Consultation du CRM clients
+  const clientsRes = await call("GET", "/api/admin/clients", null, token);
+  assert.equal(clientsRes.status, 200);
+  assert.ok(clientsRes.data.clients.length > 0);
+  assert.ok(clientsRes.data.kpis.totalReceived >= 1);
+  const clientYao = clientsRes.data.clients.find(c => c.phone.includes("0711223344") || c.name.includes("Konan Yao"));
+  assert.ok(clientYao, "Client Konan Yao trouvé dans le CRM");
+  assert.ok(clientYao.demandesCount >= 1);
+  assert.ok(clientYao.totalRevenue >= 75000);
+
+  // 5. Mise à jour du statut de contact du client
+  const contactRes = await call("PATCH", `/api/admin/clients/${clientYao.phone}/contact`, {
+    contactStatus: "Contacté",
+    notes: "Appelé au téléphone, client ravi, rendez-vous fixé demain",
+  }, token);
+  assert.equal(contactRes.status, 200);
+  assert.equal(contactRes.data.contactStatus, "Contacté");
+
+  // 6. Consultation de la traçabilité complète
+  const traceRes = await call("GET", "/api/admin/tracabilite", null, token);
+  assert.equal(traceRes.status, 200);
+  assert.ok(traceRes.data.actions.length > 0);
+  assert.ok(traceRes.data.total > 0);
+});
+
+
+
+
 

@@ -13,9 +13,13 @@ import {
   type PublicUser,
   type PaymentRecord,
   type PaymentReceipt,
+  type Subscription,
 } from "../lib/api";
 import { I, Rich } from "../components/Icon";
+import { MetaVerifiedBadge, VerifiedPill, PlanBadge, AvatarEditButton } from "../components/Badges";
+import { RiCamera3Fill } from "react-icons/ri";
 import PaymentModal, { type PaymentTargetRequest } from "../components/PaymentModal";
+import SubscriptionModal from "../components/SubscriptionModal";
 import CommuneSelect from "../components/CommuneSelect";
 
 interface Me {
@@ -38,6 +42,8 @@ interface Me {
   } | null;
   requests: { id: number; title: string; category: string; commune: string; status: string; amount: number | null; date: string }[];
   payments?: PaymentRecord[];
+  subscriptions?: Subscription[];
+  monthlyJobs?: { count: number; limit: number | null; remaining: number | null };
 }
 
 const badge: Record<string, string> = {
@@ -86,6 +92,7 @@ export default function Account() {
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<PaymentTargetRequest | null>(null);
   const [activeReceiptRef, setActiveReceiptRef] = useState<string | null>(null);
+  const [subModalOpen, setSubModalOpen] = useState(false);
 
   useEffect(() => { if (!hasToken) navigate("/connexion", { replace: true }); }, [hasToken, navigate]);
   useEffect(() => { if (error?.status === 401) { userToken.clear(); navigate("/connexion", { replace: true }); } }, [error, navigate]);
@@ -93,7 +100,7 @@ export default function Account() {
   if (!hasToken || loading) return <Spinner />;
   if (error || !data) return <div className="max-w-xl mx-auto px-6 py-20"><ErrorBox message={error?.message ?? "Erreur de chargement."} /></div>;
 
-  const { user, artisan, requests, payments = [] } = data;
+  const { user, artisan, requests, payments = [], subscriptions = [], monthlyJobs } = data;
 
   function openEditProfile() {
     setProfileError("");
@@ -258,26 +265,32 @@ export default function Account() {
           <div className="flex items-center gap-5">
             {/* Avatar & Photo Picker */}
             <div className="relative group shrink-0">
-              {artisan?.img ? (
-                <img
-                  src={artisan.img}
-                  alt={`Photo de profil de ${user.firstName}`}
-                  className="w-24 h-24 rounded-2xl object-cover border-2 border-[#1D4E5B]/20 shadow-md bg-[#F4F8F9]"
-                />
-              ) : (
-                <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#1D4E5B] to-[#2B6D7F] text-white flex items-center justify-center text-3xl font-black shadow-md border-2 border-[#1D4E5B]/20">
-                  {userInitials}
-                </div>
-              )}
-              <button
-                type="button"
+              <div
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute -bottom-2 -right-2 bg-[#F26522] hover:bg-[#C84E10] text-white p-2.5 rounded-xl shadow-md transition-transform hover:scale-110 cursor-pointer"
-                title="Changer la photo de profil"
-                aria-label="Changer la photo de profil"
+                className="cursor-pointer relative overflow-hidden rounded-2xl group/img"
+                title="Changer votre photo de profil"
               >
-                <I e="📷" />
-              </button>
+                {artisan?.img ? (
+                  <img
+                    src={artisan.img}
+                    alt={`Photo de profil de ${user.firstName}`}
+                    className="w-24 h-24 rounded-2xl object-cover border-2 border-[#1D4E5B]/20 shadow-md bg-[#F4F8F9] transition-transform duration-300 group-hover/img:scale-105"
+                  />
+                ) : (
+                  <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#1D4E5B] to-[#2B6D7F] text-white flex items-center justify-center text-3xl font-black shadow-md border-2 border-[#1D4E5B]/20 transition-transform duration-300 group-hover/img:scale-105">
+                    {userInitials}
+                  </div>
+                )}
+                {/* Overlay au survol */}
+                <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] opacity-0 group-hover/img:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center text-white">
+                  <RiCamera3Fill className="w-6 h-6 drop-shadow-md text-white animate-pulse" />
+                  <span className="text-[10px] font-black uppercase tracking-wider mt-1 text-white drop-shadow-md">Modifier</span>
+                </div>
+              </div>
+
+              {/* Bouton d'action circulaire avec icône caméra et anneau blanc */}
+              <AvatarEditButton onClick={() => fileInputRef.current?.click()} />
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -290,17 +303,20 @@ export default function Account() {
             {/* Infos identité */}
             <div>
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1D4E5B]">
-                  {user.firstName} {user.lastName}
+                <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1D4E5B] flex items-center gap-2">
+                  <span>{user.firstName} {user.lastName}</span>
+                  {user.verified && (
+                    <MetaVerifiedBadge
+                      className="w-7 h-7 sm:w-8 sm:h-8 hover:scale-110 transition-transform cursor-pointer"
+                      title="Compte certifié & vérifié (Style officiel Facebook / Instagram)"
+                    />
+                  )}
                 </h1>
                 <span className={`text-xs px-3 py-1 rounded-full font-bold border ${badge[user.status] || "bg-gray-100 text-gray-700"}`}>
                   {user.status}
                 </span>
-                {user.verified && (
-                  <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
-                    <I e="✓" /> Vérifié
-                  </span>
-                )}
+                <PlanBadge plan={user.plan} />
+                {user.verified && <VerifiedPill />}
               </div>
               <p className="text-sm text-[#6B7280] mt-1 flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-[#1D4E5B]">
@@ -359,7 +375,7 @@ export default function Account() {
         </div>
       )}
 
-      {/* Cartes d'activité et disponibilité */}
+      {/* Cartes d'activité, statut et abonnement */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
         <div className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-6">
           <p className="text-xs font-black uppercase tracking-widest text-[#9CA3AF] mb-3">Statut du compte</p>
@@ -367,43 +383,92 @@ export default function Account() {
             {user.status}
           </span>
           {user.verified && (
-            <span className="ml-2 text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded-full font-bold">
-              <I e="✓" /> Vérifié
+            <span className="ml-2 inline-block">
+              <VerifiedPill />
             </span>
           )}
           <p className="text-sm text-[#6B7280] mt-4"><I e="📍" /> {user.commune ?? "—"}</p>
         </div>
 
-        {artisan && (
-          <>
-            <div className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-6">
-              <p className="text-xs font-black uppercase tracking-widest text-[#9CA3AF] mb-3">Mon activité</p>
-              <p className="font-bold text-[#1D4E5B]">{artisan.trade}</p>
-              <p className="text-sm text-[#6B7280] mt-1">
-                <I e="★" /> {artisan.rating || "—"} · {artisan.reviews_count} avis · {artisan.missions} missions
-              </p>
-              <p className="text-xs text-[#F26522] font-semibold mt-2">
-                Tarif : {artisan.price || "Sur devis"}
-              </p>
-            </div>
-            <div className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-6">
-              <p className="text-xs font-black uppercase tracking-widest text-[#9CA3AF] mb-3">Disponibilité</p>
+        {/* Carte Formule & Quotas */}
+        <div className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-6 flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-[#9CA3AF] mb-3">Formule & Quota</p>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <PlanBadge plan={user.plan} size="lg" />
+              </div>
               <button
-                onClick={toggleAvailability}
-                disabled={toggling}
-                role="switch"
-                aria-checked={!!artisan.available}
-                className={`px-5 py-3 rounded-xl font-bold text-sm transition-colors cursor-pointer ${
-                  artisan.available
-                    ? "bg-green-600 text-white hover:bg-green-700"
-                    : "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
-                }`}
+                type="button"
+                onClick={() => setSubModalOpen(true)}
+                className="text-xs font-bold text-[#F26522] hover:underline"
               >
-                {artisan.available ? <Rich text={"✓ Disponible"} /> : <Rich text={"✗ Occupé"} />}
+                {user.plan === "Pro" || user.plan === "Entreprise" ? "Renouveler" : "Passer à Pro"}
               </button>
-              <p className="text-xs text-[#9CA3AF] mt-3">Cliquez pour changer votre statut dans les résultats.</p>
             </div>
-          </>
+            {user.plan === "Pro" || user.plan === "Entreprise" ? (
+              <div>
+                <p className="text-xs text-emerald-600 font-bold mb-1">✓ Offres illimitées & prioritaires</p>
+                {user.planExpiresAt && (
+                  <p className="text-[11px] text-[#6B7280]">Actif jusqu'au {fmtDate(user.planExpiresAt)}</p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-[#6B7280] mb-1.5">
+                  Offres d'emploi ce mois : <strong>{monthlyJobs?.count ?? 0} / 3</strong>
+                </p>
+                <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden mb-1.5">
+                  <div
+                    className={`h-full ${(monthlyJobs?.count ?? 0) >= 3 ? "bg-red-500" : "bg-[#F26522]"}`}
+                    style={{ width: `${Math.min(100, ((monthlyJobs?.count ?? 0) / 3) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-[#9CA3AF]">
+                  {(monthlyJobs?.remaining ?? 3) > 0
+                    ? `${monthlyJobs?.remaining ?? 3} offre(s) restante(s)`
+                    : "Quota gratuit mensuel atteint"}
+                </p>
+              </div>
+            )}
+          </div>
+          <Link to="/publier-offre" className="mt-3 text-xs text-[#1D4E5B] font-bold hover:text-[#F26522] flex items-center gap-1">
+            Publier une offre d'emploi →
+          </Link>
+        </div>
+
+        {artisan ? (
+          <div className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-6">
+            <p className="text-xs font-black uppercase tracking-widest text-[#9CA3AF] mb-3">Disponibilité</p>
+            <button
+              onClick={toggleAvailability}
+              disabled={toggling}
+              role="switch"
+              aria-checked={!!artisan.available}
+              className={`px-5 py-3 rounded-xl font-bold text-sm transition-colors cursor-pointer ${
+                artisan.available
+                  ? "bg-green-600 text-white hover:bg-green-700"
+                  : "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+              }`}
+            >
+              {artisan.available ? <Rich text={"✓ Disponible"} /> : <Rich text={"✗ Occupé"} />}
+            </button>
+            <p className="text-xs text-[#9CA3AF] mt-3">Cliquez pour changer votre statut dans les résultats.</p>
+          </div>
+        ) : (
+          <div className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-6 flex flex-col justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-[#9CA3AF] mb-3">Avantages Abonnés</p>
+              <ul className="text-xs text-[#6B7280] space-y-1.5">
+                <li>• Assistance prioritaire 7j/7</li>
+                <li>• Reçus téléchargeables instantanés</li>
+                <li>• Mises en avant dans les alertes</li>
+              </ul>
+            </div>
+            <Link to="/tarifs" className="text-xs font-bold text-[#F26522] hover:underline mt-2">
+              Découvrir les offres Proximo →
+            </Link>
+          </div>
         )}
       </div>
 
@@ -795,6 +860,18 @@ export default function Account() {
         defaultName={`${user.firstName} ${user.lastName}`}
         receiptReference={activeReceiptRef}
         onPaymentSuccess={handlePaymentSuccess}
+      />
+
+      {/* MODAL D'ABONNEMENT */}
+      <SubscriptionModal
+        isOpen={subModalOpen}
+        onClose={() => setSubModalOpen(false)}
+        initialPlan={user.plan === "Entreprise" ? "Entreprise" : "Pro"}
+        userPhone={user.phone}
+        onSuccess={() => {
+          setSubModalOpen(false);
+          api.get<Me>("/me", "user").then(setData).catch(() => {});
+        }}
       />
     </div>
   );

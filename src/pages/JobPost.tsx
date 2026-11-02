@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import VoiceAssistant from "../components/VoiceAssistant";
 import { ErrorBox, Field, inputClass, selectClass } from "../components/ui";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, userToken, type JobQuota } from "../lib/api";
 import CommuneSelect from "../components/CommuneSelect";
+import SubscriptionModal from "../components/SubscriptionModal";
 
 import { I, Rich } from "../components/Icon";
 const contractTypes = ["CDI", "CDD", "Temps partiel", "Freelance / Mission", "Stage", "Apprentissage", "Journalier"];
@@ -24,12 +25,31 @@ export default function JobPost() {
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [quota, setQuota] = useState<JobQuota | null>(null);
+  const [subModalOpen, setSubModalOpen] = useState(false);
+
   const set = (k: string, v: string) => { setForm((f) => ({ ...f, [k]: v })); setError(""); };
+
+  async function fetchQuota(phoneNum?: string) {
+    try {
+      const hasToken = !!userToken.get();
+      const q = phoneNum ? `?phone=${encodeURIComponent(phoneNum)}` : "";
+      const res = await api.get<JobQuota>(`/jobs/quota${q}`, hasToken ? "user" : false);
+      setQuota(res);
+    } catch {
+      // Ignorer si échec silencieux
+    }
+  }
+
+  useEffect(() => {
+    fetchQuota();
+  }, []);
 
   function next() {
     if (step === 1) {
       if (posterType === "entreprise" && !form.company.trim()) return setError("Le nom de l'entreprise est requis.");
       if (!form.contactName.trim() || !form.phone.trim()) return setError("Nom du contact et téléphone sont requis.");
+      fetchQuota(form.phone);
     }
     if (step === 2 && (!form.title.trim() || !form.sector || !form.contractType || !form.commune2)) return setError("Titre, secteur, type de contrat et lieu sont requis.");
     setError("");
@@ -38,10 +58,15 @@ export default function JobPost() {
 
   async function submit() {
     if (!form.profile.trim() || !form.description.trim()) return setError("Le profil souhaité et la description sont requis.");
+    if (quota && !quota.canPost) {
+      setError("Limite atteinte : Le plan Gratuit est limité à 3 offres par mois. Veuillez passer au plan Pro pour continuer.");
+      return;
+    }
     setBusy(true);
     try {
       await api.post("/jobs", { ...form, posterType });
       setSubmitted(true);
+      fetchQuota(form.phone);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Erreur inattendue.");
     } finally { setBusy(false); }
@@ -66,46 +91,110 @@ export default function JobPost() {
   );
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-12">
-      <div className="mb-8">
-        <nav className="text-sm text-[#6B7280] mb-4 flex items-center gap-2">
-          <Link to="/" className="hover:text-[#F26522]"><I e="🏠" /> Accueil</Link><span>/</span><span className="text-[#1D4E5B] font-semibold"><I e="📢" /> Publier une offre d'emploi</span>
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+      <div className="mb-6 sm:mb-8">
+        <nav className="text-xs sm:text-sm text-[#6B7280] mb-3 sm:mb-4 flex items-center gap-2 flex-wrap">
+          <Link to="/" className="hover:text-[#F26522]"><I e="🏠" /> Accueil</Link><span>/</span><span className="text-[#1D4E5B] font-semibold"><I e="📢" /> Publier une offre</span>
         </nav>
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-start justify-between gap-3 sm:gap-4 flex-wrap">
           <div>
-            <h1 className="text-5xl text-[#1D4E5B] mb-2">Publier une offre</h1>
-            <p className="text-[#6B7280]">Gratuit · Sans création de compte · Publication immédiate</p>
+            <h1 className="text-3xl sm:text-5xl font-black text-[#1D4E5B] mb-1.5 sm:mb-2">Publier une offre</h1>
+            <p className="text-xs sm:text-sm text-[#6B7280]">
+              {quota?.isUnlimited
+                ? `✨ Formule ${quota.plan} active · Offres illimitées & prioritaires`
+                : "3 offres gratuites par mois · Sans création de compte · Publication immédiate"}
+            </p>
           </div>
           <VoiceAssistant label="Aide vocale" text="Remplissez ce formulaire pour publier votre offre d'emploi ou de recrutement sur Proximo CI. C'est gratuit et sans création de compte." />
         </div>
       </div>
 
-      <div className="bg-[#E8F2F5] border-2 border-[#1D4E5B]/20 rounded-2xl px-6 py-4 mb-8 flex items-start gap-3">
-        <span className="text-2xl"><I e="ℹ️" /></span>
-        <div className="text-sm text-[#1D4E5B]"><strong>Pas besoin de compte !</strong> Toute personne ou entreprise peut publier une offre d'emploi gratuitement. Vos coordonnées restent privées — les candidats vous contacteront selon votre méthode de contact choisie.</div>
+      {/* Bannière de Quota mensuel */}
+      {quota && (
+        <div className={`rounded-2xl p-4 sm:p-5 mb-6 border-2 transition-all ${
+          quota.isUnlimited
+            ? "bg-[#FFF9F2] border-[#F26522]/30 text-[#1D4E5B]"
+            : quota.canPost
+            ? "bg-[#E8F2F5] border-[#1D4E5B]/20 text-[#1D4E5B]"
+            : "bg-[#FEF2F2] border-red-300 text-red-900"
+        }`}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-black uppercase px-2.5 py-0.5 rounded-full ${
+                  quota.isUnlimited
+                    ? "bg-[#F26522] text-white"
+                    : "bg-[#1D4E5B] text-white"
+                }`}>
+                  Plan {quota.plan}
+                </span>
+                <span className="font-bold text-sm">
+                  {quota.isUnlimited
+                    ? "Offres d'emploi illimitées"
+                    : `Quota mensuel : ${quota.currentCount} / ${quota.limit} offres`}
+                </span>
+              </div>
+              <p className="text-xs text-[#6B7280]">
+                {quota.isUnlimited
+                  ? "Vos annonces bénéficient de la mise en avant Pro sur le catalogue Proximo CI."
+                  : quota.canPost
+                  ? `Il vous reste ${quota.remaining} offre(s) gratuite(s) pour le mois en cours.`
+                  : "Vous avez atteint votre quota mensuel de 3 offres gratuites."}
+              </p>
+            </div>
+
+            {!quota.isUnlimited && (
+              <div className="shrink-0 flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setSubModalOpen(true)}
+                  className="w-full sm:w-auto px-4 py-2 bg-[#F26522] hover:bg-[#C84E10] text-white rounded-xl text-xs font-bold shadow-sm transition-all"
+                >
+                  {quota.canPost ? "Passer à Pro (Illimité)" : "Activer Pro pour publier (2 500 FCFA)"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!quota.isUnlimited && (
+            <div className="w-full bg-gray-200 h-2 rounded-full mt-3 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  quota.currentCount >= 3 ? "bg-red-500" : "bg-[#F26522]"
+                }`}
+                style={{ width: `${Math.min(100, (quota.currentCount / 3) * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="bg-[#E8F2F5] border-2 border-[#1D4E5B]/20 rounded-2xl px-4 sm:px-6 py-3.5 sm:py-4 mb-6 sm:mb-8 flex items-start gap-3">
+        <span className="text-xl sm:text-2xl shrink-0"><I e="ℹ️" /></span>
+        <div className="text-xs sm:text-sm text-[#1D4E5B] leading-relaxed"><strong>Pas besoin de compte !</strong> Toute personne ou entreprise peut publier une offre d'emploi gratuitement. Vos coordonnées restent privées — les candidats vous contacteront selon votre méthode de contact choisie.</div>
       </div>
 
-      <div className="flex items-center gap-2 mb-8">
+      <div className="flex items-center gap-1.5 sm:gap-2 mb-6 sm:mb-8">
         {[["1", "Qui publie ?"], ["2", "L'offre"], ["3", "Profil & contact"]].map(([n, label], idx) => (
           <div key={n} className="flex items-center gap-2 flex-1">
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${step > idx + 1 ? "bg-[#F26522] text-white" : step === idx + 1 ? "bg-[#1D4E5B] text-white ring-4 ring-[#E8F2F5]" : "bg-[#E8F2F5] text-[#9CA3AF]"}`}>{step > idx + 1 ? <Rich text={"✓"} /> : n}</div>
-            <span className={`text-xs font-bold hidden sm:block ${step >= idx + 1 ? "text-[#1D4E5B]" : "text-[#9CA3AF]"}`}>{label}</span>
-            {idx < 2 && <div className={`flex-1 h-[2px] rounded-full mx-2 ${step > idx + 1 ? "bg-[#F26522]" : "bg-[#E8F2F5]"}`} />}
+            <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0 ${step > idx + 1 ? "bg-[#F26522] text-white" : step === idx + 1 ? "bg-[#1D4E5B] text-white ring-4 ring-[#E8F2F5]" : "bg-[#E8F2F5] text-[#9CA3AF]"}`}>{step > idx + 1 ? <Rich text={"✓"} /> : n}</div>
+            <span className={`text-[11px] sm:text-xs font-bold hidden sm:block ${step >= idx + 1 ? "text-[#1D4E5B]" : "text-[#9CA3AF]"}`}>{label}</span>
+            {idx < 2 && <div className={`flex-1 h-[2px] rounded-full mx-1 sm:mx-2 ${step > idx + 1 ? "bg-[#F26522]" : "bg-[#E8F2F5]"}`} />}
           </div>
         ))}
       </div>
 
-      <div className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-8">
+      <div className="bg-white border-2 border-[#E8F2F5] rounded-2xl p-4 sm:p-8">
         {step === 1 && (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5 sm:gap-6">
             <div>
-              <p className="text-sm font-bold text-[#1D4E5B] mb-3">Vous êtes... <span className="text-[#F26522]">*</span></p>
-              <div className="grid grid-cols-2 gap-4">
+              <p className="text-sm font-bold text-[#1D4E5B] mb-2.5 sm:mb-3">Vous êtes... <span className="text-[#F26522]">*</span></p>
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 {(["entreprise", "particulier"] as const).map((t) => (
                   <button key={t} type="button" onClick={() => setPosterType(t)} aria-pressed={posterType === t}
-                    className={`py-6 px-4 rounded-2xl border-2 font-bold transition-all flex flex-col items-center gap-3 ${posterType === t ? (t === "entreprise" ? "border-[#1D4E5B] bg-[#E8F2F5] text-[#1D4E5B]" : "border-[#F26522] bg-[#FDE8D9] text-[#C84E10]") : "border-[#D1D9DC] text-[#6B7280] hover:border-[#1D4E5B]"}`}>
-                    <span className="text-4xl">{t === "entreprise" ? <Rich text={"🏢"} /> : <Rich text={"👤"} />}</span>
-                    <span className="text-base">{t === "entreprise" ? "Une entreprise" : "Un particulier"}</span>
+                    className={`py-4 sm:py-6 px-3 sm:px-4 rounded-2xl border-2 font-bold transition-all flex flex-col items-center gap-2 sm:gap-3 ${posterType === t ? (t === "entreprise" ? "border-[#1D4E5B] bg-[#E8F2F5] text-[#1D4E5B]" : "border-[#F26522] bg-[#FDE8D9] text-[#C84E10]") : "border-[#D1D9DC] text-[#6B7280] hover:border-[#1D4E5B]"}`}>
+                    <span className="text-3xl sm:text-4xl">{t === "entreprise" ? <Rich text={"🏢"} /> : <Rich text={"👤"} />}</span>
+                    <span className="text-sm sm:text-base">{t === "entreprise" ? "Une entreprise" : "Un particulier"}</span>
                   </button>
                 ))}
               </div>
@@ -127,14 +216,14 @@ export default function JobPost() {
         )}
 
         {step === 2 && (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5 sm:gap-6">
             <Field label="Titre du poste" id="title" required>{ctl("title", "title", { type: "text", placeholder: "Ex : Électricien qualifié, Cuisinier, Chauffeur..." })}</Field>
             <Field label="Secteur d'activité" id="sector" required>
               <select id="sector" value={form.sector} onChange={(e) => set("sector", e.target.value)} className={selectClass}>
                 <option value="">Sélectionnez le secteur...</option>{sectors.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </Field>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Type de contrat" id="contractType" required>
                 <select id="contractType" value={form.contractType} onChange={(e) => set("contractType", e.target.value)} className={selectClass}>
                   <option value="">Type...</option>{contractTypes.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -157,7 +246,7 @@ export default function JobPost() {
         )}
 
         {step === 3 && (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5 sm:gap-6">
             <Field label="Profil souhaité" id="profile" required>
               <textarea id="profile" rows={3} placeholder="Ex : Homme ou femme, sérieux(se), ponctuel(le), avec au moins 2 ans d'expérience..." value={form.profile} onChange={(e) => set("profile", e.target.value)} className={`${inputClass} resize-none`} />
             </Field>
@@ -179,9 +268,9 @@ export default function JobPost() {
               <legend className="block text-sm font-bold text-[#1D4E5B] mb-2"><I e="📨" /> Comment les candidats doivent-ils postuler ? <span className="text-[#F26522]">*</span></legend>
               <div className="flex flex-col gap-2">
                 {[["whatsapp", "📱 Contacter par WhatsApp"], ["email", "✉️ Envoyer un email"], ["phone", "📞 Appeler directement"], ["presentiel", "🚶 Se présenter en personne"]].map(([val, label]) => (
-                  <label key={val} className={`flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 cursor-pointer transition-all ${form.howToApply === val ? "border-[#1D4E5B] bg-[#E8F2F5]" : "border-[#D1D9DC] hover:border-[#1D4E5B]"}`}>
+                  <label key={val} className={`flex items-center gap-3 px-3.5 sm:px-4 py-3 sm:py-3.5 rounded-xl border-2 cursor-pointer transition-all ${form.howToApply === val ? "border-[#1D4E5B] bg-[#E8F2F5]" : "border-[#D1D9DC] hover:border-[#1D4E5B]"}`}>
                     <input type="radio" name="howToApply" value={val} checked={form.howToApply === val} onChange={(e) => set("howToApply", e.target.value)} className="accent-[#F26522]" />
-                    <span className="font-semibold text-sm text-[#1D4E5B]"><Rich text={label} /></span>
+                    <span className="font-semibold text-xs sm:text-sm text-[#1D4E5B]"><Rich text={label} /></span>
                   </label>
                 ))}
               </div>
@@ -192,15 +281,33 @@ export default function JobPost() {
 
         {error && <div className="mt-6"><ErrorBox message={error} /></div>}
 
-        <div className="flex justify-between mt-8 pt-6 border-t-2 border-[#E8F2F5]">
-          {step > 1 ? <button type="button" onClick={() => { setError(""); setStep((s) => s - 1); }} className="flex items-center gap-2 px-6 py-4 border-2 border-[#D1D9DC] rounded-xl font-bold text-[#1D4E5B] hover:bg-[#E8F2F5] transition-colors"><I e="←" /> Retour</button> : <div />}
+        <div className="flex flex-col-reverse sm:flex-row justify-between gap-3 mt-8 pt-6 border-t-2 border-[#E8F2F5]">
+          {step > 1 ? <button type="button" onClick={() => { setError(""); setStep((s) => s - 1); }} className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3.5 sm:py-4 border-2 border-[#D1D9DC] rounded-xl font-bold text-sm sm:text-base text-[#1D4E5B] hover:bg-[#E8F2F5] transition-colors"><I e="←" /> Retour</button> : <div />}
           {step < 3 ? (
-            <button type="button" onClick={next} className="px-8 py-4 bg-[#F26522] text-white rounded-xl font-bold text-base hover:bg-[#C84E10] transition-colors shadow-md">Continuer <I e="→" /></button>
+            <button type="button" onClick={next} className="w-full sm:w-auto px-8 py-3.5 sm:py-4 bg-[#F26522] text-white rounded-xl font-bold text-sm sm:text-base hover:bg-[#C84E10] transition-colors shadow-md">Continuer <I e="→" /></button>
           ) : (
-            <button type="button" onClick={submit} disabled={busy} className="px-8 py-4 bg-[#F26522] text-white rounded-xl font-bold text-base hover:bg-[#C84E10] transition-colors shadow-md disabled:opacity-60">{busy ? "Publication…" : <Rich text={"📢 Publier l'offre d'emploi"} />}</button>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={busy || (quota !== null && !quota.canPost)}
+              className="w-full sm:w-auto px-8 py-3.5 sm:py-4 bg-[#F26522] text-white rounded-xl font-bold text-sm sm:text-base hover:bg-[#C84E10] transition-colors shadow-md disabled:opacity-60"
+            >
+              {busy ? "Publication…" : quota && !quota.canPost ? "Quota mensuel atteint" : <Rich text={"📢 Publier l'offre d'emploi"} />}
+            </button>
           )}
         </div>
       </div>
+
+      <SubscriptionModal
+        isOpen={subModalOpen}
+        onClose={() => setSubModalOpen(false)}
+        initialPlan="Pro"
+        userPhone={form.phone}
+        onSuccess={() => {
+          setSubModalOpen(false);
+          fetchQuota(form.phone);
+        }}
+      />
     </div>
   );
 }

@@ -4,7 +4,19 @@ import Logo from "../components/Logo";
 import { api, ApiError, adminToken } from "../lib/api";
 import { validatePassword } from "../lib/admin";
 
-import { I, Rich } from "../components/Icon";
+import {
+  RiLock2Fill,
+  RiLockPasswordFill,
+  RiSmartphoneFill,
+  RiAlertFill,
+  RiEyeFill,
+  RiEyeCloseFill,
+  RiArrowRightLine,
+  RiArrowLeftLine,
+  RiCheckLine,
+  RiShieldCheckFill,
+} from "react-icons/ri";
+
 type Step = "credentials" | "2fa" | "locked";
 
 export default function AdminLogin() {
@@ -55,20 +67,6 @@ export default function AdminLogin() {
     } finally { setLoading(false); }
   }
 
-  async function handleDevFill() {
-    setError(""); setLoading(true);
-    try {
-      const res = await api.post<{ code: string }>("/admin/dev-totp", { challenge });
-      if (res.code) {
-        const digits = res.code.split("");
-        setOtp(digits);
-        void verify(res.code);
-      }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Erreur lors de la récupération du code.");
-    } finally { setLoading(false); }
-  }
-
   function handleOtpInput(i: number, val: string) {
     if (!/^\d*$/.test(val)) return;
     const next = [...otp];
@@ -99,7 +97,7 @@ export default function AdminLogin() {
 
         {step === "locked" && (
           <div className="bg-red-950/60 border-2 border-red-800 rounded-2xl p-8 text-center">
-            <span className="text-5xl block mb-4"><I e="🔒" /></span>
+            <RiLock2Fill className="w-14 h-14 text-rose-500 mx-auto mb-4" />
             <h2 className="text-white font-bold text-xl mb-2" style={{ fontFamily: "var(--font-body)" }}>Accès bloqué</h2>
             <p className="text-red-300 text-sm leading-relaxed mb-6">Trop de tentatives échouées. Votre accès est temporairement bloqué pour des raisons de sécurité. Contactez l'administrateur système.</p>
             <p className="text-red-400 text-xs font-mono">Code: ERR_AUTH_MAX_ATTEMPTS_EXCEEDED</p>
@@ -107,9 +105,11 @@ export default function AdminLogin() {
         )}
 
         {step === "credentials" && (
-          <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-8">
+          <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-8 shadow-2xl">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-[#F26522]/20 rounded-xl flex items-center justify-center text-xl"><I e="🔐" /></div>
+              <div className="w-10 h-10 bg-[#F26522]/20 rounded-xl flex items-center justify-center text-xl">
+                <RiLockPasswordFill className="w-5 h-5 text-[#F26522]" />
+              </div>
               <div><h2 className="text-white font-bold text-lg" style={{ fontFamily: "var(--font-body)" }}>Authentification</h2><p className="text-[#8FAFB7] text-xs">Étape 1 / 2 — Identifiants</p></div>
             </div>
             <form onSubmit={handleCredentials} className="flex flex-col gap-5">
@@ -123,7 +123,9 @@ export default function AdminLogin() {
                 <div className="relative">
                   <input id="a-pwd" type={showPwd ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••••••" autoComplete="current-password" required
                     className="w-full bg-white/10 border border-white/20 text-white placeholder-white/30 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-[#F26522] transition-colors font-mono pr-12" />
-                  <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors text-sm" aria-label={showPwd ? "Masquer" : "Afficher"}>{showPwd ? <Rich text={"🙈"} /> : <Rich text={"👁️"} />}</button>
+                  <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors p-1 cursor-pointer" aria-label={showPwd ? "Masquer" : "Afficher"}>
+                    {showPwd ? <RiEyeCloseFill className="w-5 h-5" /> : <RiEyeFill className="w-5 h-5" />}
+                  </button>
                 </div>
                 {password && (
                   <div className="mt-2">
@@ -132,23 +134,37 @@ export default function AdminLogin() {
                   </div>
                 )}
               </div>
-              {error && <div className="flex items-start gap-2 bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-sm" role="alert"><span><I e="⚠️" /></span><span>{error}</span></div>}
-              <button type="submit" disabled={loading} className="w-full py-4 bg-[#F26522] text-white rounded-xl font-bold text-base hover:bg-[#C84E10] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-orange-900/30">
-                {loading ? <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Rich text={"Continuer →"} />}
+              {error && (
+                <div className="flex items-start gap-2 bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-sm" role="alert">
+                  <RiAlertFill className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+              <button type="submit" disabled={loading} className="w-full py-4 bg-[#F26522] text-white rounded-xl font-bold text-base hover:bg-[#C84E10] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-orange-900/30 cursor-pointer">
+                {loading ? (
+                  <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    <span>Continuer</span>
+                    <RiArrowRightLine className="w-5 h-5" />
+                  </span>
+                )}
               </button>
             </form>
-            <div className="mt-6 pt-5 border-t border-white/10"><p className="text-[#8FAFB7] text-xs text-center leading-relaxed">Accès restreint au personnel autorisé.<br />Toute tentative non autorisée est enregistrée et signalée.</p></div>
+            <div className="mt-6 pt-5 border-t border-white/10"><p className="text-[#8FAFB7] text-xs text-center leading-relaxed">Accès strictement réservé au personnel autorisé.<br />Toute tentative non autorisée est enregistrée et auditée.</p></div>
           </div>
         )}
 
         {step === "2fa" && (
-          <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-8">
+          <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-8 shadow-2xl">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-[#1D4E5B]/50 rounded-xl flex items-center justify-center text-xl"><I e="📱" /></div>
+              <div className="w-10 h-10 bg-[#1D4E5B]/50 rounded-xl flex items-center justify-center text-xl">
+                <RiSmartphoneFill className="w-5 h-5 text-teal-300" />
+              </div>
               <div><h2 className="text-white font-bold text-lg" style={{ fontFamily: "var(--font-body)" }}>Double authentification</h2><p className="text-[#8FAFB7] text-xs">Étape 2 / 2 — Code de sécurité</p></div>
             </div>
             <p className="text-[#8FAFB7] text-sm mb-6 leading-relaxed">
-              Entrez le code à 6 chiffres affiché dans votre application Authenticator.
+              Entrez le code à 6 chiffres généré par votre application d'authentification (Google Authenticator, Microsoft Authenticator, etc.).
             </p>
             <form onSubmit={(e) => { e.preventDefault(); void verify(otp.join("")); }} className="flex flex-col gap-6">
               <div className="flex gap-3 justify-center" aria-label="Code OTP à 6 chiffres">
@@ -158,13 +174,30 @@ export default function AdminLogin() {
                     className="w-12 h-14 bg-white/10 border-2 border-white/20 text-white text-center text-2xl font-mono font-bold rounded-xl focus:outline-none focus:border-[#F26522] transition-colors" aria-label={`Chiffre ${i + 1}`} />
                 ))}
               </div>
-              {error && <div className="flex items-start gap-2 bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-sm" role="alert"><span><I e="⚠️" /></span><span>{error}</span></div>}
-              <button type="submit" disabled={otp.some((d) => !d) || loading} className="w-full py-4 bg-[#1D4E5B] text-white rounded-xl font-bold text-base hover:bg-[#163A43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer">
-                {loading ? <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Rich text={"✓ Valider l'accès"} />}
+              {error && (
+                <div className="flex items-start gap-2 bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-sm" role="alert">
+                  <RiAlertFill className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+              <button type="submit" disabled={otp.some((d) => !d) || loading} className="w-full py-4 bg-[#1D4E5B] text-white rounded-xl font-bold text-base hover:bg-[#163A43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-teal-950/40">
+                {loading ? (
+                  <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    <RiCheckLine className="w-5 h-5" />
+                    <span>Valider l'accès</span>
+                  </span>
+                )}
               </button>
             </form>
 
-            <div className="mt-6 text-xs"><button onClick={() => { setStep("credentials"); setOtp(["", "", "", "", "", ""]); setError(""); }} className="text-[#8FAFB7] hover:text-white transition-colors cursor-pointer"><I e="←" /> Retour</button></div>
+            <div className="mt-6 text-xs">
+              <button onClick={() => { setStep("credentials"); setOtp(["", "", "", "", "", ""]); setError(""); }} className="text-[#8FAFB7] hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1.5 font-medium">
+                <RiArrowLeftLine className="w-4 h-4" />
+                <span>Retour aux identifiants</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

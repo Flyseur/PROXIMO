@@ -9,7 +9,13 @@ const envFile = path.join(root, ".env");
 if (fs.existsSync(envFile)) {
   for (const line of fs.readFileSync(envFile, "utf8").split("\n")) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && !line.trim().startsWith("#") && process.env[m[1]] === undefined && m[2] !== "") process.env[m[1]] = m[2];
+    if (m && !line.trim().startsWith("#")) {
+      let val = m[2].trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (val !== "") process.env[m[1]] = val;
+    }
   }
 }
 
@@ -19,5 +25,6 @@ const { server } = await createApp({
   dbFile: path.join(dataDir, "proximo.db"),
   dataDir,
   distDir: path.join(root, "dist"),
+  seed: false,
 });
 server.listen(port, () => console.log(`🚀 Proximo CI — API sur http://localhost:${port}`));

@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS users (
   status        TEXT NOT NULL DEFAULT 'En attente' CHECK (status IN ('Actif','En attente','Suspendu')),
   verified      INTEGER NOT NULL DEFAULT 0,
   phone_verified INTEGER NOT NULL DEFAULT 0,
+  plan          TEXT NOT NULL DEFAULT 'Gratuit' CHECK (plan IN ('Gratuit','Pro','Entreprise')),
+  plan_expires_at TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -118,6 +120,7 @@ CREATE TABLE IF NOT EXISTS payments (
 
 CREATE TABLE IF NOT EXISTS jobs (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
   poster_type   TEXT NOT NULL CHECK (poster_type IN ('entreprise','particulier')),
   company       TEXT,
   contact_name  TEXT NOT NULL,
@@ -136,7 +139,22 @@ CREATE TABLE IF NOT EXISTS jobs (
   how_to_apply  TEXT NOT NULL DEFAULT 'whatsapp',
   applications  INTEGER NOT NULL DEFAULT 0,
   status        TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Clôturée')),
+  is_featured   INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan        TEXT NOT NULL CHECK (plan IN ('Pro','Entreprise')),
+  amount      INTEGER NOT NULL,
+  operator    TEXT NOT NULL CHECK (operator IN ('wave','orange_money','mtn_momo')),
+  phone       TEXT NOT NULL,
+  reference   TEXT NOT NULL UNIQUE,
+  status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','cancelled')),
+  starts_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS contact_messages (
@@ -192,6 +210,17 @@ BEGIN SELECT RAISE(ABORT, 'audit_log est immuable'); END;
 CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit_log
 BEGIN SELECT RAISE(ABORT, 'audit_log est immuable'); END;
 
+CREATE TABLE IF NOT EXISTS client_crm (
+  phone               TEXT PRIMARY KEY,
+  name                TEXT,
+  email               TEXT,
+  commune             TEXT,
+  contact_status      TEXT NOT NULL DEFAULT 'À contacter',
+  notes               TEXT,
+  last_contacted_at   TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
 CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
@@ -210,6 +239,8 @@ CREATE TABLE IF NOT EXISTS users (
   status        VARCHAR(20) NOT NULL DEFAULT 'En attente' CHECK (status IN ('Actif','En attente','Suspendu')),
   verified      INTEGER NOT NULL DEFAULT 0,
   phone_verified INTEGER NOT NULL DEFAULT 0,
+  plan          VARCHAR(20) NOT NULL DEFAULT 'Gratuit' CHECK (plan IN ('Gratuit','Pro','Entreprise')),
+  plan_expires_at TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -290,6 +321,7 @@ CREATE TABLE IF NOT EXISTS requests (
 
 CREATE TABLE IF NOT EXISTS jobs (
   id            SERIAL PRIMARY KEY,
+  user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
   poster_type   VARCHAR(20) NOT NULL CHECK (poster_type IN ('entreprise','particulier')),
   company       TEXT,
   contact_name  TEXT NOT NULL,
@@ -308,7 +340,22 @@ CREATE TABLE IF NOT EXISTS jobs (
   how_to_apply  VARCHAR(50) NOT NULL DEFAULT 'whatsapp',
   applications  INTEGER NOT NULL DEFAULT 0,
   status        VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Clôturée')),
+  is_featured   INTEGER NOT NULL DEFAULT 0,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan        VARCHAR(20) NOT NULL CHECK (plan IN ('Pro','Entreprise')),
+  amount      INTEGER NOT NULL,
+  operator    VARCHAR(20) NOT NULL CHECK (operator IN ('wave','orange_money','mtn_momo')),
+  phone       VARCHAR(30) NOT NULL,
+  reference   VARCHAR(100) NOT NULL UNIQUE,
+  status      VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','cancelled')),
+  starts_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS contact_messages (
@@ -358,6 +405,17 @@ CREATE TABLE IF NOT EXISTS audit_log (
   target     TEXT NOT NULL,
   severity   VARCHAR(20) NOT NULL DEFAULT 'info' CHECK (severity IN ('info','warning','critical')),
   ip         VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS client_crm (
+  phone               VARCHAR(30) PRIMARY KEY,
+  name                VARCHAR(150),
+  email               VARCHAR(255),
+  commune             VARCHAR(100),
+  contact_status      VARCHAR(50) NOT NULL DEFAULT 'À contacter',
+  notes               TEXT,
+  last_contacted_at   TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
@@ -432,6 +490,20 @@ export async function openDb(file) {
     });
     // Vérification de connexion et schéma
     await pool.query(SCHEMA_PG);
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS client_crm (
+          phone               VARCHAR(30) PRIMARY KEY,
+          name                VARCHAR(150),
+          email               VARCHAR(255),
+          commune             VARCHAR(100),
+          contact_status      VARCHAR(50) NOT NULL DEFAULT 'À contacter',
+          notes               TEXT,
+          last_contacted_at   TIMESTAMPTZ,
+          created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
+    } catch {}
     const adapter = createPgAdapter(pool);
     adapter.pool = pool;
     return adapter;
@@ -444,6 +516,24 @@ export async function openDb(file) {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec(SCHEMA_SQLITE);
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS client_crm (
+        phone               TEXT PRIMARY KEY,
+        name                TEXT,
+        email               TEXT,
+        commune             TEXT,
+        contact_status      TEXT NOT NULL DEFAULT 'À contacter',
+        notes               TEXT,
+        last_contacted_at   TEXT,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+  } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'Gratuit';"); } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN plan_expires_at TEXT;"); } catch {}
+  try { db.exec("ALTER TABLE jobs ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;"); } catch {}
+  try { db.exec("ALTER TABLE jobs ADD COLUMN is_featured INTEGER NOT NULL DEFAULT 0;"); } catch {}
   db.isPg = false;
   return db;
 }

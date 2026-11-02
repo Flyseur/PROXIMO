@@ -8,6 +8,7 @@ import {
   sha256, randomDigits, randomId, verifyTotp, totp,
 } from "./crypto.js";
 import { sendOtp } from "./notify.js";
+import { createGeniusPayment, getGeniusPayment, isGeniusPayConfigured } from "./geniuspay.js";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 const ADMIN_IDLE_SEC = 15 * 60;
@@ -17,9 +18,9 @@ const OTP_TTL_SEC = 10 * 60;
 const OTP_MAX_ATTEMPTS = 5;
 
 const PERMS = {
-  "Super Admin": ["overview", "users", "demandes", "offres", "stats", "audit", "action:users", "action:offres", "action:demandes"],
-  "Modérateur": ["overview", "users", "demandes", "offres", "action:users", "action:offres", "action:demandes"],
-  "Analyste": ["overview", "stats"],
+  "Super Admin": ["overview", "users", "demandes", "offres", "stats", "audit", "clients", "tracabilite", "action:users", "action:offres", "action:demandes", "action:clients"],
+  "Modérateur": ["overview", "users", "demandes", "offres", "stats", "clients", "tracabilite", "action:users", "action:offres", "action:demandes", "action:clients"],
+  "Analyste": ["overview", "stats", "clients", "tracabilite"],
 };
 const COMMUNES = ["Cocody", "Yopougon", "Plateau", "Abobo", "Marcory", "Koumassi", "Treichville", "Adjamé", "Attécoubé", "Port-Bouët", "Bingerville", "Autre"];
 
@@ -355,9 +356,10 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     const reqRow = await db.prepare("SELECT * FROM requests WHERE id = ?").get(requestId);
     if (!reqRow) throw new HttpError(404, "Demande introuvable.");
 
-    const allowedOps = ["wave", "orange_money", "mtn_momo"];
-    const operator = String(body.operator ?? "").toLowerCase().trim();
-    if (!allowedOps.includes(operator)) throw bad("Opérateur Mobile Money invalide (choix : Wave, Orange Money, MTN).");
+    const allowedOps = ["wave", "orange_money", "mtn_momo", "card"];
+    const rawOp = String(body.operator ?? "wave").toLowerCase().trim();
+    const operator = rawOp === "orange" ? "orange_money" : rawOp === "mtn" ? "mtn_momo" : rawOp;
+    if (!allowedOps.includes(operator)) throw bad("Opérateur Mobile Money invalide (choix : Wave, Orange Money, MTN, Carte).");
 
     const phone = normalizePhone(body.phone);
     if (!phone) throw bad("Numéro de compte Mobile Money invalide (format ivoirien, 10 chiffres).");
@@ -368,17 +370,31 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     }
 
     const customerName = str(body.customerName || `${reqRow.first_name} ${reqRow.last_name}`, 150);
-
     const opPrefix = operator === "wave" ? "WAV" : operator === "orange_money" ? "OM" : "MTN";
-    const refSuffix = randomDigits(6);
-    const reference = `PRX-${opPrefix}-${refSuffix}`;
 
+    // Appel passerelle GeniusPay (Sandbox ou Live selon configuration)
+    const geniusData = await createGeniusPayment({
+      amount,
+      paymentMethod: operator,
+      description: `Acompte devis #${requestId} - ${reqRow.title}`,
+      customer: {
+        name: customerName,
+        phone: `+${phone}`,
+      },
+      metadata: {
+        type: "deposit",
+        requestId,
+      },
+    });
+
+    const reference = geniusData.reference || `PRX-${opPrefix}-${randomDigits(6)}`;
+    const fee = Math.round(Number(geniusData.fees) || 0);
     const nowIso = new Date().toISOString().replace("T", " ").slice(0, 19);
 
     const r = await db.prepare(`
       INSERT INTO payments (request_id, operator, phone, amount, fee, reference, status, customer_name, created_at)
       VALUES (?,?,?,?,?,?,?,?,?)
-    `).run(requestId, operator, phone, amount, 0, reference, "completed", customerName, nowIso);
+    `).run(requestId, operator === "card" ? "wave" : operator, phone, amount, fee, reference, "completed", customerName, nowIso);
 
     // Mise à jour de la demande
     await db.prepare("UPDATE requests SET status = 'Acompte versé', amount = COALESCE(amount, ?) WHERE id = ?")
@@ -395,6 +411,9 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
         customerName,
         requestId,
         status: "completed",
+        checkoutUrl: geniusData.checkout_url || null,
+        paymentUrl: geniusData.payment_url || null,
+        gateway: "geniuspay",
         date: nowIso,
         receiptUrl: `/recu/${reference}`,
       },
@@ -427,6 +446,243 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     };
   });
 
+  // ---- Quotas d'offres et abonnements -----------------------------------------
+  route("GET", "/api/jobs/quota", async ({ query, req }) => {
+    const authUser = await userFromReq(req);
+    const phone = normalizePhone(query.get("phone"));
+    const userByPhone = !authUser && phone ? await db.prepare("SELECT * FROM users WHERE phone = ?").get(phone) : null;
+    const user = authUser || userByPhone;
+    const plan = user?.plan || "Gratuit";
+
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const startIso = startOfMonth.toISOString().slice(0, 19).replace("T", " ");
+
+    let count = 0;
+    if (user) {
+      const row = await db.prepare(
+        "SELECT COUNT(*) AS c FROM jobs WHERE (user_id = ? OR phone = ?) AND created_at >= ?"
+      ).get(user.id, user.phone, startIso);
+      count = Number(row?.c ?? 0);
+    } else if (phone) {
+      const row = await db.prepare(
+        "SELECT COUNT(*) AS c FROM jobs WHERE phone = ? AND created_at >= ?"
+      ).get(phone, startIso);
+      count = Number(row?.c ?? 0);
+    }
+
+    const isUnlimited = plan === "Pro" || plan === "Entreprise";
+    const limitNum = isUnlimited ? null : 3;
+    const remaining = isUnlimited ? null : Math.max(0, 3 - count);
+
+    return {
+      plan,
+      isUnlimited,
+      limit: limitNum,
+      currentCount: count,
+      remaining,
+      canPost: isUnlimited || count < 3,
+    };
+  });
+
+  route("POST", "/api/subscriptions", async ({ body, req }) => {
+    limit(`sub:${clientIp(req)}`, 15, 3600_000);
+    const plan = str(body.plan, 20);
+    if (!["Pro", "Entreprise"].includes(plan)) throw bad("Formule d'abonnement invalide (choix : Pro, Entreprise).");
+
+    const allowedOps = ["wave", "orange_money", "mtn_momo", "card"];
+    const rawOp = String(body.operator ?? "wave").toLowerCase().trim();
+    const operator = rawOp === "orange" ? "orange_money" : rawOp === "mtn" ? "mtn_momo" : rawOp;
+    if (!allowedOps.includes(operator)) throw bad("Opérateur Mobile Money invalide (choix : Wave, Orange Money, MTN MoMo, Carte).");
+
+    const phone = normalizePhone(body.phone);
+    if (!phone) throw bad("Numéro Mobile Money invalide (format ivoirien, 10 chiffres).");
+
+    const authUser = await userFromReq(req);
+    let user = authUser || (!authUser ? await db.prepare("SELECT * FROM users WHERE phone = ?").get(phone) : null);
+    let token = null;
+
+    if (!user) {
+      // Auto-provision un compte utilisateur client pour permettre à tout visiteur de souscrire sans blocage
+      const customerName = str(body.name || body.customerName, 100) || "Client Proximo";
+      const parts = customerName.split(" ");
+      const firstName = parts[0] || "Client";
+      const lastName = parts.slice(1).join(" ") || "Proximo";
+      const dummyHash = hashPassword(randomDigits(12));
+      const resUser = await db.prepare(`
+        INSERT INTO users (role, first_name, last_name, phone, commune, status, phone_verified, plan, password_hash)
+        VALUES ('client', ?, ?, ?, 'Cocody', 'Actif', 1, ?, ?)
+      `).run(firstName, lastName, phone, plan, dummyHash);
+      const newUserId = Number(resUser.lastInsertRowid);
+      user = await db.prepare("SELECT * FROM users WHERE id = ?").get(newUserId);
+    }
+
+    token = signToken({ typ: "user", sub: user.id }, secret, 7 * 24 * 3600);
+
+    const billingCycle = body.billingCycle === "yearly" ? "yearly" : "monthly";
+    const isYearly = billingCycle === "yearly";
+
+    let amount = 0;
+    if (plan === "Pro") {
+      amount = isYearly ? 25000 : 2500;
+    } else {
+      amount = isYearly ? 50000 : 5000;
+    }
+
+    const opPrefix = operator === "wave" ? "WAV" : operator === "orange_money" ? "OM" : "MTN";
+    const durationLabel = isYearly ? "1 an (365 jours)" : "30 jours";
+
+    // Appel passerelle GeniusPay (Sandbox ou Live selon configuration)
+    const geniusData = await createGeniusPayment({
+      amount,
+      paymentMethod: operator,
+      description: `Abonnement Proximo CI - Formule ${plan} (${durationLabel})`,
+      customer: {
+        name: `${user.first_name} ${user.last_name}`,
+        phone: `+${phone}`,
+        email: user.email || undefined,
+      },
+      metadata: {
+        type: "subscription",
+        plan,
+        billingCycle,
+        userId: user.id,
+      },
+    });
+
+    const reference = geniusData.reference || `PRX-SUB-${opPrefix}-${randomDigits(6)}`;
+    const fee = Math.round(Number(geniusData.fees) || 0);
+
+    const nowIso = new Date().toISOString().replace("T", " ").slice(0, 19);
+    const expiresDate = new Date();
+    if (isYearly) {
+      expiresDate.setDate(expiresDate.getDate() + 365);
+    } else {
+      expiresDate.setDate(expiresDate.getDate() + 30);
+    }
+    const expiresIso = expiresDate.toISOString().replace("T", " ").slice(0, 19);
+
+    await tx(db, async () => {
+      // 1. Inscription dans la table subscriptions
+      await db.prepare(`
+        INSERT INTO subscriptions (user_id, plan, amount, operator, phone, reference, status, starts_at, expires_at, created_at)
+        VALUES (?,?,?,?,?,?,'active',?,?,?)
+      `).run(user.id, plan, amount, operator === "card" ? "wave" : operator, phone, reference, nowIso, expiresIso, nowIso);
+
+      // 2. Mise à jour de l'utilisateur (plan, plan_expires_at, verified pour Entreprise)
+      const isEntreprise = plan === "Entreprise";
+      await db.prepare(`
+        UPDATE users
+        SET plan = ?, plan_expires_at = ?, verified = CASE WHEN ? = 1 THEN 1 ELSE verified END
+        WHERE id = ?
+      `).run(plan, expiresIso, isEntreprise ? 1 : 0, user.id);
+
+      // 3. Trace dans payments
+      await db.prepare(`
+        INSERT INTO payments (request_id, operator, phone, amount, fee, reference, status, customer_name, created_at)
+        VALUES (NULL, ?, ?, ?, ?, ?, 'completed', ?, ?)
+      `).run(operator === "card" ? "wave" : operator, phone, amount, fee, reference, `${user.first_name} ${user.last_name}`, nowIso);
+    });
+
+    const updatedUser = await db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
+    return {
+      status: 201,
+      data: {
+        ok: true,
+        reference,
+        plan,
+        billingCycle,
+        durationDays: isYearly ? 365 : 30,
+        amount,
+        operator,
+        phone: maskPhone(phone),
+        startsAt: nowIso,
+        expiresAt: expiresIso,
+        status: geniusData.status || "completed",
+        checkoutUrl: geniusData.checkout_url || null,
+        paymentUrl: geniusData.payment_url || null,
+        gateway: "geniuspay",
+        token: token || undefined,
+        message: `Félicitations ! Votre abonnement ${plan} (${isYearly ? "Annuel - 1 an" : "Mensuel - 30 jours"}) est activé via GeniusPay.`,
+        user: publicUser(updatedUser),
+      },
+    };
+  });
+
+  // ---- Endpoints GeniusPay (Vérification & Webhook) ---------------------------
+  route("GET", "/api/geniuspay/verify/:reference", async ({ params }) => {
+    const payment = await getGeniusPayment(params.reference);
+    if (payment && payment.status === "completed") {
+      const ref = params.reference;
+      // 1. Mise à jour de l'acompte si présent
+      const p = await db.prepare("SELECT * FROM payments WHERE reference = ?").get(ref);
+      if (p && p.status !== "completed") {
+        await db.prepare("UPDATE payments SET status = 'completed' WHERE reference = ?").run(ref);
+        if (p.request_id) {
+          await db.prepare("UPDATE requests SET status = 'Acompte versé' WHERE id = ?").run(p.request_id);
+        }
+      }
+
+      // 2. Mise à jour de l'abonnement si présent
+      const sub = await db.prepare("SELECT * FROM subscriptions WHERE reference = ?").get(ref);
+      if (sub) {
+        if (sub.status !== "active") {
+          await db.prepare("UPDATE subscriptions SET status = 'active' WHERE reference = ?").run(ref);
+        }
+        await db.prepare("UPDATE users SET plan = ?, plan_expires_at = ?, verified = CASE WHEN ? = 'Entreprise' THEN 1 ELSE verified END WHERE id = ?")
+          .run(sub.plan, sub.expires_at, sub.plan, sub.user_id);
+      }
+    }
+    return { success: true, data: payment };
+  });
+
+  route("POST", "/api/geniuspay/simulate-success/:reference", async ({ params }) => {
+    const ref = params.reference;
+    const p = await db.prepare("SELECT * FROM payments WHERE reference = ?").get(ref);
+    if (p) {
+      await db.prepare("UPDATE payments SET status = 'completed' WHERE reference = ?").run(ref);
+      if (p.request_id) {
+        await db.prepare("UPDATE requests SET status = 'Acompte versé' WHERE id = ?").run(p.request_id);
+      }
+    }
+    const sub = await db.prepare("SELECT * FROM subscriptions WHERE reference = ?").get(ref);
+    if (sub) {
+      await db.prepare("UPDATE subscriptions SET status = 'active' WHERE reference = ?").run(ref);
+      await db.prepare("UPDATE users SET plan = ?, plan_expires_at = ?, verified = CASE WHEN ? = 'Entreprise' THEN 1 ELSE verified END WHERE id = ?")
+        .run(sub.plan, sub.expires_at, sub.plan, sub.user_id);
+    }
+    return { success: true, reference: ref, status: "completed", simulated: true };
+  });
+
+  route("POST", "/api/webhooks/geniuspay", async ({ body }) => {
+    const data = body?.data || body;
+    const reference = data?.reference;
+    if (!reference) throw bad("Référence GeniusPay manquante.");
+
+    const status = data?.status; // completed, failed, expired
+    if (status === "completed") {
+      // 1. Mise à jour si paiement d'acompte de mission
+      const p = await db.prepare("SELECT * FROM payments WHERE reference = ?").get(reference);
+      if (p) {
+        await db.prepare("UPDATE payments SET status = 'completed' WHERE reference = ?").run(reference);
+        if (p.request_id) {
+          await db.prepare("UPDATE requests SET status = 'Acompte versé' WHERE id = ?").run(p.request_id);
+        }
+      }
+
+      // 2. Mise à jour si abonnement
+      const sub = await db.prepare("SELECT * FROM subscriptions WHERE reference = ?").get(reference);
+      if (sub) {
+        await db.prepare("UPDATE subscriptions SET status = 'active' WHERE reference = ?").run(reference);
+        await db.prepare("UPDATE users SET plan = ?, plan_expires_at = ? WHERE id = ?")
+          .run(sub.plan, sub.expires_at, sub.user_id);
+      }
+    }
+
+    return { received: true, reference, status };
+  });
+
   route("POST", "/api/jobs", async ({ body, req }) => {
     limit(`job:${clientIp(req)}`, 10, 3600_000);
     const phone = normalizePhone(body.phone);
@@ -444,12 +700,65 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     if (!f.title || !f.sector || !f.contractType || !f.commune) throw bad("Titre, secteur, contrat et lieu sont requis.");
     if (!f.profile || !f.description) throw bad("Profil souhaité et description sont requis.");
     if (f.email && !validEmail(f.email)) throw bad("Adresse email invalide.");
+
+    // Contrôle du compte et du quota mensuel selon le plan
+    const authUser = await userFromReq(req);
+    const userByPhone = !authUser ? await db.prepare("SELECT * FROM users WHERE phone = ?").get(phone) : null;
+    const user = authUser || userByPhone;
+    let plan = user?.plan || "Gratuit";
+
+    // Vérifier l'expiration du plan
+    if (plan !== "Gratuit" && user?.plan_expires_at) {
+      const exp = new Date(user.plan_expires_at).getTime();
+      if (Date.now() > exp) {
+        plan = "Gratuit";
+        await db.prepare("UPDATE users SET plan = 'Gratuit' WHERE id = ?").run(user.id);
+      }
+    }
+
+    if (plan === "Gratuit") {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const startIso = startOfMonth.toISOString().slice(0, 19).replace("T", " ");
+
+      let monthlyCount = 0;
+      if (user) {
+        const row = await db.prepare(
+          "SELECT COUNT(*) AS c FROM jobs WHERE (user_id = ? OR phone = ?) AND created_at >= ?"
+        ).get(user.id, phone, startIso);
+        monthlyCount = Number(row?.c ?? 0);
+      } else {
+        const row = await db.prepare(
+          "SELECT COUNT(*) AS c FROM jobs WHERE phone = ? AND created_at >= ?"
+        ).get(phone, startIso);
+        monthlyCount = Number(row?.c ?? 0);
+      }
+
+      if (monthlyCount >= 3) {
+        throw new HttpError(403, "Limite atteinte : Le plan Gratuit est limité à 3 offres par mois. Passez au plan Pro (2 500 FCFA/mois) pour publier des offres en illimité.", {
+          code: "PLAN_LIMIT_REACHED",
+          plan: "Gratuit",
+          limit: 3,
+          currentCount: monthlyCount,
+        });
+      }
+    }
+
+    const isFeatured = (plan === "Pro" || plan === "Entreprise") ? 1 : 0;
     const nb = Math.min(99, Math.max(1, parseInt(body.nbPosts, 10) || 1));
-    const r = await db.prepare(`INSERT INTO jobs (poster_type, company, contact_name, phone, email, poster_commune, title, sector, contract_type, commune, salary, nb_posts,
-      profile, experience, studies, skills, description, how_to_apply) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(posterType, f.company || null, f.contactName, phone, f.email || null, f.posterCommune || null, f.title, f.sector, f.contractType, f.commune, f.salary || null, nb,
-        f.profile, f.experience || null, f.studies || null, f.skills || null, f.description, f.howToApply);
-    return { status: 201, data: { id: Number(r.lastInsertRowid) } };
+    const r = await db.prepare(`INSERT INTO jobs (user_id, poster_type, company, contact_name, phone, email, poster_commune, title, sector, contract_type, commune, salary, nb_posts,
+      profile, experience, studies, skills, description, how_to_apply, is_featured) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(user?.id || null, posterType, f.company || null, f.contactName, phone, f.email || null, f.posterCommune || null, f.title, f.sector, f.contractType, f.commune, f.salary || null, nb,
+        f.profile, f.experience || null, f.studies || null, f.skills || null, f.description, f.howToApply, isFeatured);
+    return {
+      status: 201,
+      data: {
+        id: Number(r.lastInsertRowid),
+        isFeatured: !!isFeatured,
+        plan,
+      },
+    };
   });
 
   route("POST", "/api/contact", async ({ body, req }) => {
@@ -577,6 +886,7 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
   const publicUser = (u) => ({
     id: Number(u.id), role: u.role, firstName: u.first_name, lastName: u.last_name, phone: u.phone,
     email: u.email, commune: u.commune, status: u.status, verified: !!u.verified,
+    plan: u.plan || "Gratuit", planExpiresAt: u.plan_expires_at || null,
   });
 
   route("GET", "/api/me", async ({ req }) => {
@@ -614,7 +924,30 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
       `).all(u.phone);
     }
 
-    return { user: publicUser(u), artisan, requests, payments };
+    const subscriptions = await db.prepare(`
+      SELECT id, plan, amount, operator, phone, reference, status, starts_at, expires_at, created_at
+      FROM subscriptions
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 20
+    `).all(u.id);
+
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const startIso = startOfMonth.toISOString().slice(0, 19).replace("T", " ");
+    const jobRow = await db.prepare(
+      "SELECT COUNT(*) AS c FROM jobs WHERE (user_id = ? OR phone = ?) AND created_at >= ?"
+    ).get(u.id, u.phone, startIso);
+    const currentJobsCount = Number(jobRow?.c ?? 0);
+    const isUnlimited = u.plan === "Pro" || u.plan === "Entreprise";
+    const monthlyJobs = {
+      count: currentJobsCount,
+      limit: isUnlimited ? null : 3,
+      remaining: isUnlimited ? null : Math.max(0, 3 - currentJobsCount),
+    };
+
+    return { user: publicUser(u), artisan, requests, payments, subscriptions, monthlyJobs };
   });
 
   route("PATCH", "/api/me/availability", async ({ req, body }) => {
@@ -750,14 +1083,6 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
     return { token: signToken({ typ: "admin", sid }, secret, 12 * 3600), session: adminSessionInfo(admin, { ip, issued_at: now }) };
   });
 
-  route("POST", "/api/admin/dev-totp", async ({ body }) => {
-    const p = verifyToken(body.challenge, secret);
-    if (!p || p.typ !== "admin-2fa") throw new HttpError(401, "Étape expirée. Recommencez la connexion.");
-    const admin = await db.prepare("SELECT * FROM admins WHERE id = ?").get(p.sub);
-    if (!admin) throw new HttpError(404, "Administrateur non trouvé.");
-    return { code: totp(admin.totp_secret) };
-  });
-
   const adminSessionInfo = (admin, s) => ({
     user: { id: Number(admin.id), username: admin.username, displayName: admin.display_name, role: admin.role, avatar: admin.avatar },
     permissions: PERMS[admin.role], ip: s.ip, issuedAt: Number(s.issued_at) * 1000,
@@ -812,12 +1137,119 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
   route("GET", "/api/admin/stats", async ({ req }) => {
     const { admin } = await adminFromReq(req);
     need(admin, "stats");
-    const months = (await db.prepare(`SELECT strftime('%Y-%m', created_at) AS ym, COUNT(*) AS users FROM users GROUP BY ym ORDER BY ym DESC LIMIT 6`).all()).reverse();
-    const missionsRows = await db.prepare(`SELECT strftime('%Y-%m', created_at) AS ym, COUNT(*) AS n, COALESCE(SUM(CASE WHEN status='Terminé' THEN amount END),0) AS amt
+
+    // 1. Évolution mensuelle (utilisateurs, demandes, terminées, abonnements, revenus)
+    const months = (await db.prepare(`SELECT strftime('%Y-%m', created_at) AS ym, COUNT(*) AS users FROM users GROUP BY ym ORDER BY ym DESC LIMIT 12`).all()).reverse();
+    const missionsRows = await db.prepare(`SELECT strftime('%Y-%m', created_at) AS ym, COUNT(*) AS n,
+      COUNT(CASE WHEN status='Terminé' THEN 1 END) AS n_done,
+      COALESCE(SUM(CASE WHEN status='Terminé' THEN amount END), 0) AS amt_done,
+      COALESCE(SUM(amount), 0) AS amt_total
       FROM requests GROUP BY ym`).all();
-    const missions = Object.fromEntries(missionsRows.map((r) => [r.ym, { n: Number(r.n), amt: Number(r.amt) }]));
-    const monthly = months.map((m) => ({ ym: m.ym, users: Number(m.users), missions: missions[m.ym]?.n ?? 0, revenus: Math.round((missions[m.ym]?.amt ?? 0) * 0.08) }));
-    return { monthly, total: monthly.reduce((s, m) => s + m.revenus, 0) };
+    const subRows = await db.prepare(`SELECT strftime('%Y-%m', created_at) AS ym, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total
+      FROM subscriptions WHERE status = 'active' GROUP BY ym`).all();
+
+    const missionsMap = Object.fromEntries(missionsRows.map((r) => [r.ym, {
+      n: Number(r.n),
+      n_done: Number(r.n_done),
+      amt_done: Number(r.amt_done),
+      amt_total: Number(r.amt_total)
+    }]));
+    const subMap = Object.fromEntries(subRows.map((r) => [r.ym, { count: Number(r.count), total: Number(r.total) }]));
+
+    const monthly = (months.length > 0 ? months : [{ ym: "2026-11", users: 1 }]).map((m) => {
+      const miss = missionsMap[m.ym] ?? { n: 0, n_done: 0, amt_done: 0, amt_total: 0 };
+      const sub = subMap[m.ym] ?? { count: 0, total: 0 };
+      const commissions = Math.round(miss.amt_done * 0.08);
+      const abonnements = sub.total;
+      return {
+        ym: m.ym,
+        users: Number(m.users),
+        missions: miss.n,
+        completedMissions: miss.n_done,
+        volumeAffaires: miss.amt_done,
+        commissions,
+        abonnements,
+        revenus: commissions + abonnements,
+      };
+    });
+
+    // 2. Chiffres clés globaux
+    const totalCommissions = monthly.reduce((s, m) => s + m.commissions, 0);
+    const totalAbonnements = monthly.reduce((s, m) => s + m.abonnements, 0);
+    const totalRevenus = totalCommissions + totalAbonnements;
+    const totalGrossVolume = monthly.reduce((s, m) => s + m.volumeAffaires, 0);
+
+    const requestsStats = await db.prepare(`SELECT
+      COUNT(*) AS total,
+      COUNT(CASE WHEN status='Terminé' THEN 1 END) AS done,
+      COUNT(CASE WHEN status='En cours' THEN 1 END) AS in_progress,
+      COUNT(CASE WHEN status='En attente' THEN 1 END) AS pending,
+      COALESCE(AVG(CASE WHEN status='Terminé' THEN amount END), 0) AS avg_amount
+      FROM requests`).get();
+
+    const artisansStats = await db.prepare(`SELECT
+      COUNT(*) AS total,
+      COUNT(CASE WHEN u.verified = 1 THEN 1 END) AS verified_count,
+      COALESCE(AVG(a.rating), 0) AS avg_rating
+      FROM users u JOIN artisans a ON a.user_id = u.id`).get();
+
+    // 3. Répartition par moyen de paiement (payments)
+    const payMethodRows = await db.prepare(`SELECT operator, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total
+      FROM payments GROUP BY operator ORDER BY total DESC`).all();
+    const totalPaymentsAmount = payMethodRows.reduce((s, r) => s + Number(r.total), 0);
+    const byOperator = payMethodRows.map((r) => ({
+      operator: r.operator,
+      label: r.operator === "wave" ? "Wave CI" : r.operator === "orange_money" ? "Orange Money" : r.operator === "mtn_momo" ? "MTN MoMo" : "GeniusPay (Carte/Visa)",
+      count: Number(r.count),
+      total: Number(r.total),
+      pct: totalPaymentsAmount > 0 ? Math.round((Number(r.total) / totalPaymentsAmount) * 100) : 0,
+    }));
+
+    // 4. Répartition par secteur / métier
+    const tradeRows = await db.prepare(`SELECT COALESCE(a.trade, 'Divers') AS trade,
+      COUNT(DISTINCT a.user_id) AS artisans_count,
+      COUNT(DISTINCT r.id) AS requests_count,
+      COALESCE(SUM(CASE WHEN r.status='Terminé' THEN r.amount END), 0) AS volume
+      FROM artisans a
+      LEFT JOIN requests r ON r.artisan_id = a.user_id
+      GROUP BY trade ORDER BY requests_count DESC, artisans_count DESC LIMIT 8`).all();
+
+    // 5. Répartition géographique par commune
+    const zoneRows = await db.prepare(`SELECT commune, COUNT(*) AS count
+      FROM users WHERE commune IS NOT NULL AND commune != ''
+      GROUP BY commune ORDER BY count DESC LIMIT 8`).all();
+
+    // 6. Répartition par formule d'abonnement
+    const planRows = await db.prepare(`SELECT plan, COUNT(*) AS count FROM users GROUP BY plan`).all();
+
+    return {
+      monthly,
+      total: totalRevenus,
+      kpis: {
+        totalRevenus,
+        totalCommissions,
+        totalAbonnements,
+        totalGrossVolume,
+        totalRequests: Number(requestsStats?.total ?? 0),
+        completedRequests: Number(requestsStats?.done ?? 0),
+        inProgressRequests: Number(requestsStats?.in_progress ?? 0),
+        pendingRequests: Number(requestsStats?.pending ?? 0),
+        conversionRate: requestsStats?.total > 0 ? Math.round((Number(requestsStats.done) / Number(requestsStats.total)) * 100) : 0,
+        panierMoyen: Math.round(Number(requestsStats?.avg_amount ?? 0)),
+        artisansCount: Number(artisansStats?.total ?? 0),
+        verifiedArtisansRate: artisansStats?.total > 0 ? Math.round((Number(artisansStats.verified_count) / Number(artisansStats.total)) * 100) : 0,
+        avgArtisanRating: Number(artisansStats?.avg_rating ?? 0).toFixed(1),
+      },
+      byOperator,
+      byTrade: tradeRows.map((r) => ({
+        trade: r.trade,
+        artisansCount: Number(r.artisans_count),
+        requestsCount: Number(r.requests_count),
+        volume: Number(r.volume),
+      })),
+      byZone: zoneRows.map((r) => ({ commune: r.commune, count: Number(r.count) })),
+      byPlan: planRows.map((r) => ({ plan: r.plan, count: Number(r.count) })),
+    };
   });
 
   route("GET", "/api/admin/users", async ({ req }) => {
@@ -866,10 +1298,285 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
   route("GET", "/api/admin/demandes", async ({ req }) => {
     const { admin } = await adminFromReq(req);
     need(admin, "demandes");
-    return (await db.prepare(`SELECT r.id, r.title AS titre, r.first_name || ' ' || r.last_name AS client, COALESCE(u.first_name || ' ' || u.last_name, '—') AS artisan,
+    return (await db.prepare(`SELECT r.id, r.title AS titre, r.first_name || ' ' || r.last_name AS client,
+      r.first_name, r.last_name, r.phone, r.email, r.category, r.description, r.budget, r.urgency,
+      COALESCE(u.first_name || ' ' || u.last_name, '—') AS artisan,
+      u.phone AS artisan_phone,
       COALESCE(a.trade, r.category) AS metier, r.commune, r.amount AS montant, r.status, r.created_at AS date
-      FROM requests r LEFT JOIN users u ON u.id = r.artisan_id LEFT JOIN artisans a ON a.user_id = r.artisan_id ORDER BY r.created_at DESC LIMIT 200`).all())
-      .map(r => ({ ...r, id: Number(r.id), montant: r.montant !== null ? Number(r.montant) : null }));
+      FROM requests r
+      LEFT JOIN users u ON u.id = r.artisan_id
+      LEFT JOIN artisans a ON a.user_id = r.artisan_id
+      ORDER BY r.created_at DESC LIMIT 200`).all())
+      .map(r => ({
+        ...r,
+        id: Number(r.id),
+        montant: r.montant !== null ? Number(r.montant) : null,
+      }));
+  });
+
+  route("PATCH", "/api/admin/demandes/:id/status", async ({ req, params, body }) => {
+    const { admin } = await adminFromReq(req);
+    need(admin, "action:demandes");
+    const id = Number(params.id);
+    const d = await db.prepare("SELECT * FROM requests WHERE id = ?").get(id);
+    if (!d) throw new HttpError(404, "Demande introuvable.");
+
+    const status = str(body.status, 40);
+    const validStatuses = ["En attente", "En cours", "Terminé", "Annulé", "Acompte versé"];
+    if (!validStatuses.includes(status)) throw bad("Statut de demande invalide.");
+
+    let amount = d.amount;
+    if (body.amount !== undefined) {
+      amount = body.amount === null || body.amount === "" ? null : Math.max(0, parseInt(body.amount, 10));
+    }
+
+    await db.prepare("UPDATE requests SET status = ?, amount = ? WHERE id = ?").run(status, amount, id);
+    const verb = status === "En cours" ? "ACCEPT_DEMANDE" : status === "Terminé" ? "COMPLETE_DEMANDE" : status === "Annulé" ? "REJECT_DEMANDE" : "UPDATE_DEMANDE";
+    await audit(admin, verb, `Demande #${id} — ${d.title} (Statut: ${status}${amount ? `, Montant: ${amount} FCFA` : ""})`, status === "Annulé" ? "warning" : "info", clientIp(req));
+    return { id, status, amount };
+  });
+
+  route("GET", "/api/admin/clients", async ({ req }) => {
+    const { admin } = await adminFromReq(req);
+    need(admin, "clients");
+
+    const userClients = await db.prepare(`
+      SELECT id, first_name, last_name, phone, email, commune, status, created_at
+      FROM users WHERE role = 'client' ORDER BY created_at DESC
+    `).all();
+
+    const requestsRows = await db.prepare(`
+      SELECT id, title, first_name, last_name, phone, email, commune, amount, status, created_at
+      FROM requests ORDER BY created_at DESC
+    `).all();
+
+    const messageRows = await db.prepare(`
+      SELECT id, name, phone, subject, message, handled, created_at
+      FROM contact_messages ORDER BY created_at DESC
+    `).all();
+
+    const crmRows = await db.prepare(`SELECT * FROM client_crm`).all();
+    const crmMap = new Map();
+    for (const row of crmRows) {
+      crmMap.set(row.phone, row);
+    }
+
+    const clientsMap = new Map();
+
+    for (const u of userClients) {
+      const p = u.phone;
+      const crm = crmMap.get(p);
+      clientsMap.set(p, {
+        userId: Number(u.id),
+        phone: p,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        name: `${u.first_name} ${u.last_name}`,
+        email: u.email || null,
+        commune: u.commune || "Cocody",
+        isRegistered: true,
+        userStatus: u.status,
+        contactStatus: crm?.contact_status || "À contacter",
+        contactNotes: crm?.notes || null,
+        lastContactedAt: crm?.last_contacted_at || null,
+        firstSeen: u.created_at,
+        lastActivity: u.created_at,
+        demandesCount: 0,
+        demandes: [],
+        totalRevenue: 0,
+        messagesCount: 0,
+        messages: [],
+      });
+    }
+
+    for (const r of requestsRows) {
+      const p = r.phone;
+      if (!clientsMap.has(p)) {
+        const crm = crmMap.get(p);
+        clientsMap.set(p, {
+          userId: null,
+          phone: p,
+          firstName: r.first_name,
+          lastName: r.last_name,
+          name: `${r.first_name} ${r.last_name}`,
+          email: r.email || null,
+          commune: r.commune || "Cocody",
+          isRegistered: false,
+          userStatus: "Prospect",
+          contactStatus: crm?.contact_status || "À contacter",
+          contactNotes: crm?.notes || null,
+          lastContactedAt: crm?.last_contacted_at || null,
+          firstSeen: r.created_at,
+          lastActivity: r.created_at,
+          demandesCount: 0,
+          demandes: [],
+          totalRevenue: 0,
+          messagesCount: 0,
+          messages: [],
+        });
+      }
+      const c = clientsMap.get(p);
+      c.demandesCount += 1;
+      const amt = Number(r.amount || 0);
+      c.totalRevenue += amt;
+      c.demandes.push({
+        id: Number(r.id),
+        title: r.title,
+        amount: amt,
+        status: r.status,
+        date: r.created_at,
+      });
+      if (new Date(r.created_at) > new Date(c.lastActivity)) {
+        c.lastActivity = r.created_at;
+      }
+    }
+
+    for (const m of messageRows) {
+      const p = m.phone;
+      if (clientsMap.has(p)) {
+        const c = clientsMap.get(p);
+        c.messagesCount += 1;
+        c.messages.push({
+          id: Number(m.id),
+          subject: m.subject,
+          message: m.message,
+          handled: !!m.handled,
+          date: m.created_at,
+        });
+      }
+    }
+
+    const clientsList = Array.from(clientsMap.values()).sort(
+      (a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+    );
+
+    const totalClientsReceived = clientsList.length;
+    const contactedCount = clientsList.filter(c => c.contactStatus !== "À contacter").length;
+    const totalRevenue = clientsList.reduce((acc, c) => acc + c.totalRevenue, 0);
+    const avgRevenue = totalClientsReceived > 0 ? Math.round(totalRevenue / totalClientsReceived) : 0;
+
+    return {
+      kpis: {
+        totalReceived: totalClientsReceived,
+        totalContacted: contactedCount,
+        contactRate: totalClientsReceived > 0 ? Math.round((contactedCount / totalClientsReceived) * 100) : 0,
+        totalRevenue,
+        avgRevenue,
+      },
+      clients: clientsList,
+    };
+  });
+
+  route("PATCH", "/api/admin/clients/:phone/contact", async ({ req, params, body }) => {
+    const { admin } = await adminFromReq(req);
+    need(admin, "action:clients");
+    const phone = params.phone;
+    const status = str(body.contactStatus, 50) || "Contacté";
+    const notes = body.notes !== undefined ? str(body.notes, 2000) : null;
+    const nowIso = new Date().toISOString();
+
+    const existing = await db.prepare("SELECT * FROM client_crm WHERE phone = ?").get(phone);
+    if (existing) {
+      await db.prepare(`
+        UPDATE client_crm
+        SET contact_status = ?, notes = COALESCE(?, notes), last_contacted_at = ?
+        WHERE phone = ?
+      `).run(status, notes, nowIso, phone);
+    } else {
+      await db.prepare(`
+        INSERT INTO client_crm (phone, contact_status, notes, last_contacted_at, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(phone, status, notes, nowIso, nowIso);
+    }
+
+    await audit(admin, "CONTACT_CLIENT", `Client ${phone} → Statut: ${status}`, "info", clientIp(req));
+    return { ok: true, phone, contactStatus: status, notes, lastContactedAt: nowIso };
+  });
+
+  route("GET", "/api/admin/tracabilite", async ({ req }) => {
+    const { admin } = await adminFromReq(req);
+    need(admin, "tracabilite");
+
+    const auditRows = await db.prepare("SELECT id, at AS timestamp, admin_name, action, target, severity, ip FROM audit_log ORDER BY id DESC LIMIT 150").all();
+    const auditActions = auditRows.map(a => ({
+      id: `audit-${a.id}`,
+      type: "admin",
+      category: "Sécurité & Admin",
+      event: a.action,
+      actor: a.admin_name,
+      target: a.target,
+      details: `Action administrative (IP: ${a.ip || "locale"})`,
+      status: "Enregistré",
+      amount: null,
+      timestamp: a.timestamp,
+      severity: a.severity || "info",
+    }));
+
+    const reqRows = await db.prepare("SELECT id, title, first_name || ' ' || last_name AS client, phone, amount, status, commune, created_at FROM requests ORDER BY id DESC LIMIT 100").all();
+    const reqActions = reqRows.map(r => ({
+      id: `req-${r.id}`,
+      type: "demande",
+      category: "Demandes de devis",
+      event: `Demande #${r.id} (${r.status})`,
+      actor: r.client,
+      target: r.title,
+      details: `Lieu: ${r.commune} · Client: +${r.phone}`,
+      status: r.status,
+      amount: r.amount ? Number(r.amount) : null,
+      timestamp: r.created_at,
+      severity: r.status === "Terminé" ? "info" : r.status === "Annulé" ? "warning" : "info",
+    }));
+
+    const payRows = await db.prepare("SELECT id, operator, phone, amount, reference, status, customer_name, created_at FROM payments ORDER BY id DESC LIMIT 100").all();
+    const payActions = payRows.map(p => ({
+      id: `pay-${p.id}`,
+      type: "paiement",
+      category: "Paiements Mobile Money",
+      event: `Paiement ${p.operator.toUpperCase()}`,
+      actor: p.customer_name || `+${p.phone}`,
+      target: `Réf: ${p.reference}`,
+      details: `Transaction traitée (${p.operator})`,
+      status: p.status === "completed" ? "Validé" : p.status,
+      amount: Number(p.amount),
+      timestamp: p.created_at,
+      severity: "info",
+    }));
+
+    const userRows = await db.prepare("SELECT id, role, first_name || ' ' || last_name AS name, phone, commune, plan, status, created_at FROM users ORDER BY id DESC LIMIT 100").all();
+    const userActions = userRows.map(u => ({
+      id: `user-${u.id}`,
+      type: "utilisateur",
+      category: "Comptes & Utilisateurs",
+      event: `Inscription ${u.role === "artisan" ? "Artisan" : "Client"}`,
+      actor: u.name,
+      target: `ID #${u.id} · Plan ${u.plan || "Gratuit"}`,
+      details: `Commune: ${u.commune || "Abidjan"} · +${u.phone}`,
+      status: u.status,
+      amount: null,
+      timestamp: u.created_at,
+      severity: u.status === "Suspendu" ? "warning" : "info",
+    }));
+
+    const msgRows = await db.prepare("SELECT id, name, phone, subject, message, created_at FROM contact_messages ORDER BY id DESC LIMIT 50").all();
+    const msgActions = msgRows.map(m => ({
+      id: `contact-${m.id}`,
+      type: "contact",
+      category: "Formulaire de contact",
+      event: "Message reçu",
+      actor: m.name || `+${m.phone}`,
+      target: m.subject || "Demande d'information",
+      details: (m.message || "").slice(0, 100) + ((m.message || "").length > 100 ? "..." : ""),
+      status: "Reçu",
+      amount: null,
+      timestamp: m.created_at,
+      severity: "info",
+    }));
+
+    const all = [...auditActions, ...reqActions, ...payActions, ...userActions, ...msgActions]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 300);
+
+    return { total: all.length, actions: all };
   });
 
   route("GET", "/api/admin/offres", async ({ req }) => {
