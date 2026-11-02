@@ -483,29 +483,36 @@ function createPgAdapter(target) {
 export async function openDb(file) {
   const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
   if (databaseUrl && file !== ":memory:") {
+    if (globalThis.__proximoPgAdapter) {
+      return globalThis.__proximoPgAdapter;
+    }
     const pool = new pg.Pool({
       connectionString: databaseUrl,
       ssl: { rejectUnauthorized: false },
       max: 10,
     });
-    // Vérification de connexion et schéma
-    await pool.query(SCHEMA_PG);
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS client_crm (
-          phone               VARCHAR(30) PRIMARY KEY,
-          name                VARCHAR(150),
-          email               VARCHAR(255),
-          commune             VARCHAR(100),
-          contact_status      VARCHAR(50) NOT NULL DEFAULT 'À contacter',
-          notes               TEXT,
-          last_contacted_at   TIMESTAMPTZ,
-          created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-      `);
-    } catch {}
+    // Vérification de connexion et schéma (exécutée une seule fois par instance)
+    if (!globalThis.__proximoSchemaChecked) {
+      await pool.query(SCHEMA_PG);
+      try {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS client_crm (
+            phone               VARCHAR(30) PRIMARY KEY,
+            name                VARCHAR(150),
+            email               VARCHAR(255),
+            commune             VARCHAR(100),
+            contact_status      VARCHAR(50) NOT NULL DEFAULT 'À contacter',
+            notes               TEXT,
+            last_contacted_at   TIMESTAMPTZ,
+            created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+        `);
+      } catch {}
+      globalThis.__proximoSchemaChecked = true;
+    }
     const adapter = createPgAdapter(pool);
     adapter.pool = pool;
+    globalThis.__proximoPgAdapter = adapter;
     return adapter;
   }
 
