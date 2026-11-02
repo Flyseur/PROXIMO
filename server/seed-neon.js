@@ -27,40 +27,28 @@ const P = {
 };
 
 const SECTIONS = [
-  { id: "batiment", title: "🏗️ Bâtiment & Construction", desc: "Tous les corps de métier du bâtiment", services: [
-    ["🔨", "Menuiserie & Ébénisterie", "menuiserie", 148, "15 000 FCFA/h", "1504148455328-c376907d081c"],
-    ["⚡", "Électricité", "electricite", 203, "18 000 FCFA/h", "1621905251189-08b45d6a269e"],
-    ["🚿", "Plomberie & Sanitaire", "plomberie", 176, "16 500 FCFA/h", "1558618666-fcd25c85cd64"],
-    ["🎨", "Peinture & Décoration", "peinture", 264, "12 000 FCFA/h", "1562259949-e8e7689d7828"],
-    ["🧱", "Maçonnerie & Carrelage", "maconnerie", 95, "14 000 FCFA/h", "1504307651254-35680f356dfd"],
-    ["🏠", "Toiture & Couverture", "toiture", 67, "20 000 FCFA/h", "1558036117-15d82a90b9b1"],
-    ["❄️", "Climatisation & VMC", "climatisation", 134, "19 000 FCFA/h", "1585771724684-38269d6639fd"],
-    ["🌿", "Jardinage & Paysagisme", "jardinage", 112, "10 000 FCFA/h", "1416879595882-3373a0480b5b"],
-    ["🪟", "Vitrerie & Aluminium", "vitrerie", 54, "17 000 FCFA/h", "1497366216548-37526070297c"],
-    ["🔩", "Métallerie & Ferronnerie", "metallerie", 43, "16 000 FCFA/h", "1581578731548-c64695cc6952"],
+  { id: "batiment", title: "🏗️ Bâtiment & Rénovation", desc: "Artisans qualifiés pour vos chantiers et réparations", services: [
+    ["🔨", "Menuiserie & Ébénisterie", "menuiserie", 1, "15 000 FCFA/h", "1504148455328-c376907d081c"],
+    ["⚡", "Électricité", "electricite", 1, "18 000 FCFA/h", "1621905251189-08b45d6a269e"],
+    ["🚿", "Plomberie & Sanitaire", "plomberie", 1, "16 500 FCFA/h", "1558618666-fcd25c85cd64"],
+    ["🎨", "Peinture & Décoration", "peinture", 1, "12 000 FCFA/h", "1562259949-e8e7689d7828"],
+    ["🧱", "Maçonnerie & Carrelage", "maconnerie", 2, "14 000 FCFA/h", "1504307651254-35680f356dfd"],
+    ["🌿", "Jardinage & Paysagisme", "jardinage", 1, "10 000 FCFA/h", "1416879595882-3373a0480b5b"],
   ]},
-  { id: "automobile", title: "🚗 Automobile & Mobilité", desc: "Mécanique, carrosserie et entretien véhicules", services: [
-    ["🔧", "Mécanicien auto", "mecanicien", 189, "13 000 FCFA/h", "1530046339160-ce3e530c7d2f"],
-    ["🎨", "Carrosserie & Peinture auto", "carrosserie", 76, "15 000 FCFA/h", "1489824904134-891ab64532f1"],
-    ["🔋", "Électricité automobile", "electricite-auto", 92, "14 000 FCFA/h", "1565043666747-69f6646db940"],
-    ["🚗", "Pneumatique & Pneus", "pneumatique", 118, "5 000 FCFA", "1558618666-fcd25c85cd64"],
-    ["🚘", "Chauffeur VTC / Transport", "chauffeur", 241, "25 000 FCFA/j", "1449965408869-eaa3f722e40d"],
-  ]},
-  { id: "beaute", title: "💅 Beauté & Bien-être", desc: "Coiffure, esthétique et soins à domicile", services: [
-    ["💇", "Coiffeur / Coiffeuse", "coiffeur", 312, "8 000 FCFA", "1522337360788-8b13dee7a37e"],
-    ["💅", "Esthéticienne / Manucure", "esthetique", 187, "7 000 FCFA", "1604654894610-df63bc536371"],
-    ["💆", "Massothérapeute", "massage", 64, "15 000 FCFA/séance", "1544161515-4ab6ce6db874"],
+  { id: "automobile", title: "🚗 Transport & Mobilité", desc: "Chauffeurs et transport à Abidjan", services: [
+    ["🚘", "Chauffeur VTC / Transport", "chauffeur", 3, "25 000 FCFA/j", "1449965408869-eaa3f722e40d"],
   ]},
   { id: "maison", title: "🏡 Services à domicile", desc: "Aide à la personne, entretien et vie quotidienne", services: [
-    ["👶", "Nounou / Garde d'enfants", "nounous", 143, "12 000 FCFA/j", "1471286174890-9c112ffca5b4"],
-    ["🧹", "Nettoyage & Entretien", "nettoyage", 228, "10 000 FCFA/j", "1558618666-fcd25c85cd64"],
-    ["👨‍🍳", "Cuisinier / Cuisinière", "cuisiniers", 97, "20 000 FCFA/j", "1556909114-f6e7ad7d3136"],
-    ["🍽️", "Serveur / Serveuse", "serveurs", 156, "15 000 FCFA/j", "1414235077428-338989a2e8c0"],
+    ["👶", "Nounou / Garde d'enfants", "nounous", 3, "12 000 FCFA/j", "1471286174890-9c112ffca5b4"],
+    ["🧹", "Nettoyage & Entretien", "nettoyage", 2, "10 000 FCFA/j", "1558618666-fcd25c85cd64"],
+    ["👨‍🍳", "Cuisinier / Cuisinière", "cuisiniers", 2, "20 000 FCFA/j", "1556909114-f6e7ad7d3136"],
+    ["🍽️", "Serveur / Serveuse", "serveurs", 1, "15 000 FCFA/j", "1414235077428-338989a2e8c0"],
   ]},
-  { id: "evenement", title: "🎉 Événementiel & Médias", desc: "Photo, vidéo, animation et organisation", services: [
-    ["📸", "Photographe", "photographes", 118, "50 000 FCFA/j", "1502920917128-1aa500764cbd"],
-    ["🎬", "Vidéaste / Cameraman", "videaste", 72, "60 000 FCFA/j", "1440404653325-ab127d49abc1"],
-    ["🎤", "DJ / Animateur", "dj", 89, "80 000 FCFA/soirée", "1493225457124-a3eb161ffa5f"],
+  { id: "evenement", title: "🎉 Événementiel & Image", desc: "Photographie et couverture de vos réceptions", services: [
+    ["📸", "Photographe", "photographes", 2, "50 000 FCFA/j", "1502920917128-1aa500764cbd"],
+  ]},
+  { id: "beaute", title: "💅 Coiffure & Soins", desc: "Soins et coiffure à domicile", services: [
+    ["💇", "Coiffeur / Coiffeuse", "coiffeur", 1, "8 000 FCFA", "1522337360788-8b13dee7a37e"],
   ]},
 ];
 

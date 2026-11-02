@@ -8,7 +8,7 @@ import CommuneSelect from "../components/CommuneSelect";
 import WhatsAppIcon from "../components/WhatsAppIcon";
 
 import { I, Rich } from "../components/Icon";
-const categories = ["Menuiserie", "Électricité", "Plomberie", "Peinture", "Maçonnerie", "Jardinage", "Toiture", "Climatisation", "Autre"];
+const categories = ["Menuiserie", "Électricité", "Plomberie", "Peinture", "Maçonnerie", "Jardinage", "Chauffeur & VTC", "Nounou", "Nettoyage", "Cuisine", "Serveur", "Photographe", "Coiffure", "Autre"];
 const urgencies = [
   { label: "⏳ Pas urgent (+ 1 mois)", value: "not_urgent" },
   { label: "📅 Sous 1 mois", value: "month" },

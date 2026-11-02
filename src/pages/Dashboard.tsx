@@ -2151,7 +2151,7 @@ export default function Dashboard() {
                           { trade: "Menuiserie", artisansCount: 1, requestsCount: 1, volume: 45000 },
                           { trade: "Électricité", artisansCount: 1, requestsCount: 0, volume: 0 },
                           { trade: "Plomberie", artisansCount: 1, requestsCount: 0, volume: 0 },
-                          { trade: "Climatisation", artisansCount: 1, requestsCount: 0, volume: 0 },
+                          { trade: "Maçonnerie", artisansCount: 2, requestsCount: 0, volume: 0 },
                         ]).map((tr) => (
                           <div key={tr.trade} className="flex items-center justify-between p-2.5 hover:bg-slate-50 rounded-xl transition-colors text-xs">
                             <div className="flex items-center gap-2.5">

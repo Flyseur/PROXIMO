@@ -28,25 +28,29 @@ export default function Services() {
         <>
           <div className="bg-white border-b-2 border-[#E8F2F5] sticky top-[60px] z-30">
             <div className="max-w-7xl mx-auto px-6 py-3 flex gap-3 overflow-x-auto" aria-label="Sections">
-              {data.sections.map((s) => (
+              {data.sections.filter((s) => s.services.length > 0).map((s) => (
                 <a key={s.id} href={`#${s.id}`} className="whitespace-nowrap px-4 py-2 rounded-full bg-[#E8F2F5] text-[#1D4E5B] text-sm font-semibold hover:bg-[#1D4E5B] hover:text-white transition-all flex-shrink-0"><Rich text={s.title} /></a>
               ))}
             </div>
           </div>
 
           <div className="max-w-7xl mx-auto px-6 py-10">
-            <p className="text-xs font-black uppercase tracking-widest text-[#F26522] mb-4"><I e="⭐" /> Pages dédiées</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-12">
-              {data.special.map((s) => (
-                <Link key={s.slug} to={`/services/${s.slug}`} className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 ${s.color} hover:scale-105 transition-transform text-center`}>
-                  <span className="text-4xl"><I e={s.icon} /></span>
-                  <span className="font-bold text-sm">{s.label}</span>
-                  <span className="text-xs opacity-70">{s.desc}</span>
-                </Link>
-              ))}
-            </div>
+            {data.special.length > 0 && (
+              <>
+                <p className="text-xs font-black uppercase tracking-widest text-[#F26522] mb-4"><I e="⭐" /> Pages dédiées</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-12">
+                  {data.special.map((s) => (
+                    <Link key={s.slug} to={`/services/${s.slug}`} className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 ${s.color} hover:scale-105 transition-transform text-center`}>
+                      <span className="text-4xl"><I e={s.icon} /></span>
+                      <span className="font-bold text-sm">{s.label}</span>
+                      <span className="text-xs opacity-70">{s.desc}</span>
+                    </Link>
+                  ))}
+                </div>
+              </>
+            )}
 
-            {data.sections.map((section) => (
+            {data.sections.filter((s) => s.services.length > 0).map((section) => (
               <section key={section.id} id={section.id} className="mb-16 scroll-mt-28">
                 <div className="mb-6">
                   <h2 className="text-4xl text-[#1D4E5B]"><Rich text={section.title} /></h2>
@@ -59,7 +63,9 @@ export default function Services() {
                         <img src={s.img} alt={s.label} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                         <div className="absolute inset-0 bg-gradient-to-t from-[#1D4E5B]/50 to-transparent" />
                         <span className="absolute bottom-2 left-2 text-2xl"><I e={s.icon} /></span>
-                        <span className="absolute top-2 right-2 text-[10px] bg-[#F26522] text-white font-bold px-2 py-0.5 rounded-full">{s.count}</span>
+                        <span className="absolute top-2 right-2 text-[10px] bg-[#F26522] text-white font-bold px-2 py-0.5 rounded-full">
+                          {s.count} {s.count > 1 ? "pros" : "pro"}
+                        </span>
                       </div>
                       <div className="p-3">
                         <p className="font-bold text-[#1D4E5B] text-xs group-hover:text-[#F26522] transition-colors leading-tight">{s.label}</p>

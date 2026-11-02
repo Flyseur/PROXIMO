@@ -165,7 +165,7 @@ export default function Home() {
                       <I e={c.icon} />
                     </div>
                     <span className="text-[11px] sm:text-xs font-bold text-[#1D4E5B] text-center group-hover:text-[#C84E10] transition-colors line-clamp-1">{c.label}</span>
-                    <span className="text-[9px] sm:text-[10px] font-medium text-[#6B7280] bg-[#F4F8F9] px-2 py-0.5 rounded-full">{c.count} pros</span>
+                    <span className="text-[9px] sm:text-[10px] font-medium text-[#6B7280] bg-[#F4F8F9] px-2 py-0.5 rounded-full">{c.count} {c.count > 1 ? "pros" : "pro"}</span>
                   </Link>
                 ))}
               </div>

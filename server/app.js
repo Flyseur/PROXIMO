@@ -176,11 +176,15 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
   route("GET", "/api/home", async () => {
     const rawCategories = await db.prepare(`
       SELECT s.icon, s.label, s.slug,
-             (SELECT COUNT(*) FROM artisan_services l JOIN users u ON u.id = l.artisan_id WHERE l.service_slug = s.slug AND u.status = 'Actif') as count
+             COUNT(DISTINCT u.id) as count
       FROM services s
-      WHERE s.slug IN ('menuiserie','electricite','plomberie','peinture','maconnerie','jardinage','toiture','climatisation')
-      ORDER BY CASE s.slug WHEN 'menuiserie' THEN 1 WHEN 'electricite' THEN 2 WHEN 'plomberie' THEN 3 WHEN 'peinture' THEN 4
-        WHEN 'maconnerie' THEN 5 WHEN 'jardinage' THEN 6 WHEN 'toiture' THEN 7 ELSE 8 END
+      JOIN artisan_services l ON l.service_slug = s.slug
+      JOIN users u ON u.id = l.artisan_id
+      WHERE u.status = 'Actif'
+      GROUP BY s.slug, s.label, s.icon, s.section_pos, s.pos
+      HAVING COUNT(DISTINCT u.id) > 0
+      ORDER BY count DESC, s.section_pos, s.pos
+      LIMIT 8
     `).all();
     const categories = rawCategories.map((c) => ({ ...c, count: Number(c.count), label: c.label.split(" & ")[0] }));
     const featuredRows = await db.prepare(`${ARTISAN_SELECT} WHERE a.featured = 1 AND u.status = 'Actif' ORDER BY u.id LIMIT 3`).all();
@@ -210,6 +214,7 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
       SELECT s.*,
              (SELECT COUNT(*) FROM artisan_services l JOIN users u ON u.id = l.artisan_id WHERE l.service_slug = s.slug AND u.status = 'Actif') as real_pros_count
       FROM services s
+      WHERE (SELECT COUNT(*) FROM artisan_services l JOIN users u ON u.id = l.artisan_id WHERE l.service_slug = s.slug AND u.status = 'Actif') > 0
       ORDER BY s.section_pos, s.pos
     `).all();
     const sections = [];
@@ -218,7 +223,7 @@ export async function createApp({ dbFile, dataDir, distDir, seed = true, logger 
       if (!s) sections.push((s = { id: r.section_id, title: r.section_title, desc: r.section_desc, services: [] }));
       s.services.push({ icon: r.icon, label: r.label, slug: r.slug, count: Number(r.real_pros_count), avg: r.avg_price, img: r.img });
     }
-    const special = rows.filter((r) => r.page_title).map((r) => ({
+    const special = rows.filter((r) => r.page_title && Number(r.real_pros_count) > 0).map((r) => ({
       icon: r.icon, label: r.page_label, slug: r.slug, color: r.page_color, desc: shortDesc[r.slug] ?? r.page_desc,
     }));
     return { sections, special };
